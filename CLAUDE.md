@@ -86,6 +86,10 @@ uv run --no-sync pyinstaller --onefile --name doubao-input ... packaging/binary_
 - 冻结二进制缺的模块要显式 --hidden-import（如 optparse）；GTK 系必须
   --exclude-module，运行时靠 binary_entry.py 追加系统 dist-packages。
 - 自启 unit 必须用 WantedBy=default.target：Cinnamon/XFCE 不会激活
-  graphical-session.target，用它等于开机不自启；DISPLAY 竞态由
-  VoiceService._await_display 每 5 秒重试兜住。
+  graphical-session.target，用它等于开机不自启。
+- systemd 用户服务的环境里没有 DISPLAY，且进程环境是启动快照不会更新；
+  任何要用 X 的路径（托盘图标、xclip）都必须先过 session_env.ensure()，
+  不要直接读 os.environ 判断显示会话。图标失败由 _await_display 退避重试。
+- runtime_dir() 缺 XDG_RUNTIME_DIR 时回落 /run/user/<uid>，否则实例锁
+  会分裂，两个服务同时抢麦克风。
 - ruff 会重排 import；用字符串替换打补丁前断言旧串存在。

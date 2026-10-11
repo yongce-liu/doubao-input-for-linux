@@ -9,7 +9,9 @@
 - `login` 为独立进程：只在用户主动调用时打开；成功或关闭窗口后退出。
 - 托盘图标可交互：左键点击等同按下/松开右 Ctrl；右键菜单提供麦克风选择、快捷键选择（右 Ctrl / 右 Shift / 右 Alt，运行时切换）、登录、退出。事件经托盘进程 stdout 回传核心，服务用 asyncio 读取。
 - `login` 已保存凭证时先询问"保持登录 / 退出登录"，退出时清空本地凭证与 WebKit 会话后才打开网页重新登录。
-- 自启 unit 用 `WantedBy=default.target`（Cinnamon/XFCE 不激活 graphical-session.target）；若启动时还没有 DISPLAY，服务每 5 秒重试挂载托盘图标。
+- 自启 unit 用 `WantedBy=default.target`（Cinnamon/XFCE 不激活 graphical-session.target）。
+- systemd 用户服务的进程环境里通常没有 DISPLAY/XAUTHORITY（桌面会话稍后才导入，且进程环境是快照）。`session_env.py` 在运行时用 loginctl → systemd 用户环境 → X11 socket 三级来源解析并写回 os.environ，托盘图标与 xclip/wl-copy 都因此可用；图标进程若因会话未就绪启动失败，`VoiceService._await_display` 按 5→30 秒退避自动重挂。
+- `runtime.runtime_dir()` 在缺少 XDG_RUNTIME_DIR 时回落到 `/run/user/<uid>`，避免实例锁与状态文件分裂成两份、两个服务同时抢麦克风。
 - 服务/托盘/麦克风测试共用用户实例锁，避免进程之间争抢设备。
 - 凭证路径沿用 `~/.config/doubao-input/asr_params.json`（支持 XDG_CONFIG_HOME）。新保存凭证原子写入、权限 0600。
 

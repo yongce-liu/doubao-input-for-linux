@@ -45,6 +45,8 @@ class FeedbackClient:
     def start(self):
         if not self.wanted:
             return
+        if self.process is not None:
+            self.close()
         if not self.has_display():
             # 开机自启时 systemd 可能早于桌面会话导入 DISPLAY；稍后重试。
             self.awaiting_display = True
@@ -53,6 +55,7 @@ class FeedbackClient:
                 self.warned = True
             return
         self.awaiting_display = False
+        self.warned = False
         try:
             command = (
                 [sys.executable, "_indicator"]
@@ -96,7 +99,8 @@ class FeedbackClient:
 
     @property
     def running(self):
-        return self.process is not None
+        """图标进程是否仍然存活（退出的进程要允许重新拉起）。"""
+        return self.process is not None and self.process.poll() is None
 
     def event_fd(self):
         if self.process is None or self.process.stdout is None:

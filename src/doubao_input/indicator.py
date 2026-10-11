@@ -7,8 +7,15 @@ import logging
 import os
 import signal
 import sys
+import warnings
 
 logger = logging.getLogger(__name__)
+
+
+def quiet_deprecations():
+    """Gtk.StatusIcon 是 GTK3 里唯一可用的 XEmbed 托盘接口，已弃用但可用；
+    屏蔽它的弃用噪声，否则每次启动都会往日志里写几行无用警告。"""
+    return warnings.catch_warnings()
 
 
 def visual_state(state):
@@ -106,19 +113,25 @@ class DockStatusIcon:
             draw_badge(cairo.Context(surface), state)
             self.pixbufs[state] = Gdk.pixbuf_get_from_surface(surface, 0, 0, SIZE, SIZE)
         self.labels = STATE_LABELS
-        self.icon = Gtk.StatusIcon()
-        self.icon.set_visible(True)
-        # 左键点击 = 按下/松开 Ctrl；右键 = 菜单。
-        self.icon.connect("activate", self._on_activate)
-        self.icon.connect("popup-menu", self._on_popup_menu)
-        self.show("idle")
+        with quiet_deprecations():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            self.icon = Gtk.StatusIcon()
+            self.icon.set_visible(True)
+            # 左键点击 = 按下/松开 Ctrl；右键 = 菜单。
+            self.icon.connect("activate", self._on_activate)
+            self.icon.connect("popup-menu", self._on_popup_menu)
+            self.show("idle")
 
     def show(self, state):
-        self.icon.set_from_pixbuf(self.pixbufs[state])
-        self.icon.set_tooltip_text(self.labels.get(state, "豆包语音输入"))
+        with quiet_deprecations():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            self.icon.set_from_pixbuf(self.pixbufs[state])
+            self.icon.set_tooltip_text(self.labels.get(state, "豆包语音输入"))
 
     def hide(self):
-        self.icon.set_visible(False)
+        with quiet_deprecations():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            self.icon.set_visible(False)
 
     def _on_activate(self, _icon):
         self.emit("toggle")
@@ -350,6 +363,7 @@ def main(*, demo=False, style="dock"):
         os.environ.get("WAYLAND_DISPLAY")
         and os.environ.get("XDG_SESSION_TYPE") != "x11"
     )
+
     def emit(event):
         try:
             sys.stdout.write(f"event:{event}\n")
@@ -361,9 +375,18 @@ def main(*, demo=False, style="dock"):
         os.environ["GDK_BACKEND"] = "x11"
         backend_class = DockStatusIcon if style == "dock" else X11Badge
         try:
-            backend = backend_class(emit=emit) if backend_class is DockStatusIcon else backend_class()
-        except (ImportError, ValueError, RuntimeError) as exc:
-            logger.warning("状态图标无法初始化，改用系统通知: %s", exc)
+            backend = (
+                backend_class(emit=emit)
+                if backend_class is DockStatusIcon
+                else backend_class()
+            )
+        except RuntimeError as exc:
+            # DISPLAY 已设置但连不上（例如会话尚未就绪）：退出让核心按退避
+            # 重试，而不是静默降级成通知，否则用户永远看不到托盘图标。
+            logger.error("状态图标无法连接显示会话: %s", exc)
+            return 1
+        except (ImportError, ValueError) as exc:
+            logger.warning("缺少 X11 组件，改用系统通知: %s", exc)
             backend = NotificationBadge()
     else:
         backend = NotificationBadge()

@@ -142,10 +142,15 @@ systemctl --user stop doubao-input.service       # 停止
 跑在用户会话里（语音输入必须能访问麦克风与剪贴板），不需要 root。
 
 unit 使用 `WantedBy=default.target` 而不是 `graphical-session.target`：
-Cinnamon、XFCE 等桌面从不激活后者，用它会导致开机不自启。开机时
-systemd 用户实例可能早于桌面会话导入 `DISPLAY`，服务检测不到显示会话
-会先正常启动语音核心，并在桌面就绪后自动补挂托盘图标；也可在桌面终端
-执行一次 `systemctl --user import-environment DISPLAY XAUTHORITY` 立即生效。
+Cinnamon、XFCE 等桌面从不激活后者，用它会导致开机不自启。
+
+系统服务还有个容易踩的坑：systemd 用户服务启动时环境里通常**没有**
+`DISPLAY`（桌面会话是之后才把变量导入用户管理器的，而进程环境是启动
+瞬间的快照，不会自动更新），结果是托盘图标不显示、粘贴报
+`Can't open display: (null)`。服务因此会在运行时用 `loginctl` 主动解析
+显示会话并写回环境变量（`session_env.py`），无需你手动执行
+`import-environment`；图标进程若因会话未就绪启动失败，会按退避策略
+自动重试。
 
 二进制建议放到稳定路径再注册服务，避免依赖仓库目录：
 

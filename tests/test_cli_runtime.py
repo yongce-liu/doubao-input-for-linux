@@ -115,3 +115,22 @@ with patch('doubao_input.service.EvdevPtt'):
             if process.poll() is None:
                 process.kill()
             process.communicate()
+
+
+class RuntimeDirTests(unittest.TestCase):
+    def test_falls_back_to_logind_dir_without_env(self):
+        from doubao_input import runtime
+
+        with patch.dict(os.environ, {}, clear=True):
+            if not Path(f"/run/user/{os.getuid()}").is_dir():
+                self.skipTest("no /run/user fallback on this host")
+            self.assertEqual(
+                runtime.runtime_dir(), Path(f"/run/user/{os.getuid()}") / "doubao-input"
+            )
+
+    def test_honours_xdg_runtime_dir(self):
+        from doubao_input import runtime
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.dict(os.environ, {"XDG_RUNTIME_DIR": tmp}):
+                self.assertEqual(runtime.runtime_dir(), Path(tmp) / "doubao-input")

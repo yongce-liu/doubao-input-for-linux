@@ -21,6 +21,7 @@ import subprocess
 import threading
 import time
 
+from doubao_input import session_env
 from doubao_input.doubao.host_tools import command_candidates
 
 logger = logging.getLogger(__name__)
@@ -75,6 +76,9 @@ class Injector:
     # ---- internals ----
 
     def _copy_to_clipboard(self, text: str) -> bool:
+        # 服务由 systemd 启动时环境里可能没有 DISPLAY，剪贴板工具会报
+        # "Can't open display: (null)"；这里按需解析一次。
+        session_env.ensure()
         data = text.encode("utf-8")
         # wl-copy first
         for cmd in (

@@ -10,8 +10,18 @@ from pathlib import Path
 
 
 def runtime_dir() -> Path:
+    # 会话外（ssh、sudo -i、cron、部分启动脚本）没有 XDG_RUNTIME_DIR。
+    # 若各自回落到不同目录，实例锁与状态文件就会分裂，导致两个服务
+    # 同时抢麦克风、status 也查不到真正的那个进程，因此统一回落到
+    # logind 的标准会话目录 /run/user/<uid>。
     base = os.environ.get("XDG_RUNTIME_DIR")
-    root = Path(base) if base else Path.home() / ".cache"
+    fallback = Path(f"/run/user/{os.getuid()}")
+    if base and Path(base).is_dir():
+        root = Path(base)
+    elif fallback.is_dir():
+        root = fallback
+    else:
+        root = Path.home() / ".cache"
     path = root / "doubao-input"
     path.mkdir(mode=0o700, parents=True, exist_ok=True)
     path.chmod(0o700)

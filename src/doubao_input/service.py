@@ -15,6 +15,7 @@ from doubao_input.doubao.params_store import ParamsStore
 from doubao_input.feedback import FeedbackClient
 from doubao_input.inject.injector import Injector
 from doubao_input.runtime import InstanceLock, write_status
+from doubao_input import session_env
 from doubao_input.streaming import AuthenticationError, recognize
 from doubao_input.trigger.evdev_ptt import (
     HOTKEYS,
@@ -216,16 +217,28 @@ class VoiceService:
         for event in events:
             self.handle_event(event)
 
-    async def _await_display(self, interval=5.0):
-        """开机自启时桌面会话可能晚于本服务就绪，就绪后补挂状态图标。"""
+    async def _await_display(self, interval=5.0, max_interval=30.0):
+        """开机自启时桌面会话可能晚于本服务就绪，就绪后补挂状态图标。
+
+        systemd 用户服务启动时环境里通常没有 DISPLAY（桌面会话稍后才导入，
+        而进程环境是快照），因此每次都用 session_env 主动解析，而不是读
+        自己那份过期的 os.environ。
+        """
+        delay = interval
         while not self._closing:
-            await asyncio.sleep(interval)
+            await asyncio.sleep(delay)
             if self._closing:
                 return
-            if self.feedback.running or not self.feedback.wanted:
+            if not self.feedback.wanted:
                 continue
+            if self.feedback.running:
+                delay = interval
+                continue
+            session_env.ensure()
             if not self.feedback.has_display():
+                delay = min(delay * 2, max_interval)
                 continue
+            delay = interval
             self.feedback.start()
             self._register_feedback_reader()
 
@@ -308,6 +321,7 @@ class VoiceService:
         self.stop_event = asyncio.Event()
         for sig in (signal.SIGINT, signal.SIGTERM):
             self.loop.add_signal_handler(sig, self.stop_event.set)
+        session_env.ensure()
         self.feedback.start()
         self._register_feedback_reader()
         if self.feedback.wanted:

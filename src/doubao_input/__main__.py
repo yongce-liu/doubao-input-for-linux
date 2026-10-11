@@ -84,11 +84,12 @@ def doctor():
     from doubao_input.doubao.params_store import ParamsStore
     from doubao_input.runtime import read_status
     from doubao_input.service import selected_device
+    from doubao_input import session_env
 
+    # 与后台服务同样主动解析：从终端运行时通常已有 DISPLAY，此处仅补空值。
+    session_env.ensure()
     checks = {
-        "桌面会话": bool(
-            os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")
-        ),
+        "桌面会话": session_env.has_display(),
         "uinput 读写权限": os.access("/dev/uinput", os.R_OK | os.W_OK),
         "剪贴板工具": bool(
             shutil.which("wl-copy")
