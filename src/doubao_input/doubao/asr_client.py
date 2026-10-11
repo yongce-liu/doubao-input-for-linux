@@ -81,9 +81,7 @@ class ASRClient:
         logger.info("Connecting to ASR WebSocket...")
         try:
             websockets = _load_websockets()
-            header_kwargs = _websocket_header_kwargs(
-                websockets.connect, headers
-            )
+            header_kwargs = _websocket_header_kwargs(websockets.connect, headers)
             async with websockets.connect(
                 url,
                 open_timeout=5,
@@ -132,9 +130,7 @@ class ASRClient:
         with self._lock:
             if self._connected and self._ws:
                 if self._loop and self._loop.is_running():
-                    asyncio.run_coroutine_threadsafe(
-                        self._ws.send(data), self._loop
-                    )
+                    asyncio.run_coroutine_threadsafe(self._ws.send(data), self._loop)
             else:
                 self._pending_audio.append(data)
 
@@ -151,9 +147,7 @@ class ASRClient:
         with self._lock:
             self._pending_audio.clear()
         if self._ws and self._loop and self._loop.is_running():
-            asyncio.run_coroutine_threadsafe(
-                self._ws.close(1000, "1000-"), self._loop
-            )
+            asyncio.run_coroutine_threadsafe(self._ws.close(1000, "1000-"), self._loop)
         self._ws = None
         logger.info("Disconnected")
 
@@ -165,9 +159,7 @@ class ASRClient:
             logger.info("Flushing %d buffered audio chunks", len(buffered))
             for chunk in buffered:
                 if self._ws and self._loop and self._loop.is_running():
-                    asyncio.run_coroutine_threadsafe(
-                        self._ws.send(chunk), self._loop
-                    )
+                    asyncio.run_coroutine_threadsafe(self._ws.send(chunk), self._loop)
 
     def _handle_message(self, message) -> None:
         """Parse JSON message from server."""
@@ -189,9 +181,7 @@ class ASRClient:
             if code == AUTH_ERROR_CODE or any(
                 kw in lower_msg for kw in AUTH_ERROR_KEYWORDS
             ):
-                logger.warning(
-                    "Auth error detected: code=%d, message=%s", code, msg
-                )
+                logger.warning("Auth error detected: code=%d, message=%s", code, msg)
                 self._connected = False
                 if self.on_auth_error:
                     self.on_auth_error()

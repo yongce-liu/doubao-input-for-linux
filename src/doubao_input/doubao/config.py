@@ -39,7 +39,12 @@ AUDIO_BLOCKSIZE = 4096  # samples per callback (~256ms at 16kHz)
 
 AUTH_ERROR_CODE = 709599054
 AUTH_ERROR_KEYWORDS = [
-    "cookie", "auth", "login", "session", "unauthorized", "expired",
+    "cookie",
+    "auth",
+    "login",
+    "session",
+    "unauthorized",
+    "expired",
 ]
 
 # --- Paths ---
@@ -48,13 +53,12 @@ CONFIG_DIR_NAME = "doubao-input"
 PARAMS_FILE = "asr_params.json"
 KEYBOARD_FILE = "keyboard.json"
 AUDIO_FILE = "audio.json"
+TRIGGER_FILE = "trigger.json"
 
 
 def get_config_dir() -> Path:
     """Get the XDG config directory for the app."""
-    config_home = os.environ.get(
-        "XDG_CONFIG_HOME", str(Path.home() / ".config")
-    )
+    config_home = os.environ.get("XDG_CONFIG_HOME", str(Path.home() / ".config"))
     app_dir = Path(config_home) / CONFIG_DIR_NAME
     app_dir.mkdir(parents=True, exist_ok=True)
     return app_dir
@@ -69,8 +73,13 @@ def get_keyboard_config_path() -> Path:
     """Get the path to the on-screen keyboard geometry JSON file."""
     return get_config_dir() / KEYBOARD_FILE
 
+
 def get_audio_config_path() -> Path:
     return get_config_dir() / AUDIO_FILE
+
+
+def get_trigger_config_path() -> Path:
+    return get_config_dir() / TRIGGER_FILE
 
 
 # --- Timeouts ---

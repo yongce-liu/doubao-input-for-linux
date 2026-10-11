@@ -12,13 +12,14 @@ The uinput device is opened lazily on first inject() and kept alive
 for the process lifetime to avoid the per-injection cost of creating
 and destroying a kernel device.
 """
+
 from __future__ import annotations
 
 import logging
+import os
 import subprocess
 import threading
 import time
-from typing import Optional
 
 from doubao_input.doubao.host_tools import command_candidates
 
@@ -76,7 +77,9 @@ class Injector:
     def _copy_to_clipboard(self, text: str) -> bool:
         data = text.encode("utf-8")
         # wl-copy first
-        for cmd in command_candidates("wl-copy"):
+        for cmd in (
+            command_candidates("wl-copy") if os.environ.get("WAYLAND_DISPLAY") else []
+        ):
             try:
                 subprocess.run(cmd, input=data, check=True, timeout=3)
                 logger.info("clipboard: wl-copy ok")
@@ -88,7 +91,9 @@ class Injector:
             try:
                 subprocess.run(
                     cmd + ["-selection", "clipboard"],
-                    input=data, check=True, timeout=3,
+                    input=data,
+                    check=True,
+                    timeout=3,
                 )
                 logger.info("clipboard: xclip ok")
                 return True
@@ -120,8 +125,10 @@ class Injector:
         """Send a Ctrl+V (or Ctrl+Shift+V) keypress through uinput."""
         try:
             ui = self._get_uinput()
-            import evdev  # type: ignore
             import time as _t
+
+            import evdev  # type: ignore
+
             # Some receivers (notably GTK apps and terminals) need
             # measurable time between key events; otherwise the
             # press-release sequence gets coalesced into nothing and
@@ -144,8 +151,9 @@ class Injector:
             if use_shift:
                 emit(KEY_LEFTSHIFT, 0)
             emit(KEY_LEFTCTRL, 0)
-            logger.info("paste: uinput ok (shift=%s, gap=%.0fms)",
-                        use_shift, GAP * 1000)
+            logger.info(
+                "paste: uinput ok (shift=%s, gap=%.0fms)", use_shift, GAP * 1000
+            )
             return True
         except Exception as e:
             logger.error("uinput paste failed: %s", e)

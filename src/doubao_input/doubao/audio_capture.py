@@ -16,7 +16,11 @@ import logging
 import threading
 from typing import Any
 
-from doubao_input.doubao.config import AUDIO_BLOCKSIZE, AUDIO_CHANNELS, AUDIO_SAMPLE_RATE
+from doubao_input.doubao.config import (
+    AUDIO_BLOCKSIZE,
+    AUDIO_CHANNELS,
+    AUDIO_SAMPLE_RATE,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +31,7 @@ class AudioCapture:
     def __init__(self, device: int | None = None) -> None:
         self._stream: Any | None = None
         self._on_audio_data = None  # callback: (bytes) -> None
-        self._on_rms = None        # callback: (float in [0,1]) -> None
+        self._on_rms = None  # callback: (float in [0,1]) -> None
         self._lock = threading.Lock()
         self.device = device
 
@@ -49,8 +53,12 @@ class AudioCapture:
                 name = str(info.get("name", "")).lower()
                 if "pipewire" in name or "pulse" in name:
                     try:
-                        sd.check_input_settings(device=info["index"], samplerate=AUDIO_SAMPLE_RATE,
-                                                channels=AUDIO_CHANNELS, dtype="int16")
+                        sd.check_input_settings(
+                            device=info["index"],
+                            samplerate=AUDIO_SAMPLE_RATE,
+                            channels=AUDIO_CHANNELS,
+                            dtype="int16",
+                        )
                         device = info["index"]
                         break
                     except Exception:
@@ -65,7 +73,13 @@ class AudioCapture:
             latency="low",
             device=device,
         )
-        self._stream.start()
+        try:
+            self._stream.start()
+        except Exception:
+            self._stream.close()
+            self._stream = None
+            self._on_audio_data = None
+            raise
         logger.info(
             "Audio capture started: %dHz, %d ch, int16",
             AUDIO_SAMPLE_RATE,
@@ -80,11 +94,13 @@ class AudioCapture:
     def stop(self) -> None:
         """Stop capturing."""
         if self._stream:
-            self._stream.stop()
-            self._stream.close()
-            self._stream = None
-            self._on_audio_data = None
-            self._on_rms = None
+            stream, self._stream = self._stream, None
+            try:
+                stream.stop()
+            finally:
+                stream.close()
+                self._on_audio_data = None
+                self._on_rms = None
             logger.info("Audio capture stopped")
 
     def _audio_callback(self, indata, frames, time_info, status) -> None:
@@ -100,6 +116,7 @@ class AudioCapture:
             # Compute on int16 view (cheap, ~256ms chunks at 16kHz).
             try:
                 import array
+
                 a = array.array("h")
                 a.frombytes(data)
                 if a:

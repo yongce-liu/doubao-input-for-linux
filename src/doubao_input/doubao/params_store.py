@@ -8,7 +8,10 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import tempfile
 from dataclasses import asdict, dataclass
+from pathlib import Path
 
 from doubao_input.doubao.config import get_params_path
 
@@ -36,7 +39,14 @@ class ParamsStore:
     def save(params: ASRParams) -> None:
         try:
             data = json.dumps(asdict(params), ensure_ascii=False, indent=2)
-            get_params_path().write_text(data, encoding="utf-8")
+            path = get_params_path()
+            fd, name = tempfile.mkstemp(dir=path.parent)
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8") as file:
+                    file.write(data)
+                os.replace(name, path)
+            finally:
+                Path(name).unlink(missing_ok=True)
             logger.info("Saved ASR params to %s", get_params_path())
         except Exception as e:
             logger.error("Failed to save params: %s", e)

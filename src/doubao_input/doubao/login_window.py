@@ -50,6 +50,7 @@ class LoginWindow:
         self._window: Gtk.Window | None = None
         self._webview = None
         self._on_login_status_change = None  # (status, nickname) -> None
+        self.on_close = None  # 独立登录进程用来退出主循环
 
     @property
     def is_active(self) -> bool:
@@ -78,7 +79,7 @@ class LoginWindow:
             # Normalize handler name
             adapted_js = ws_js.replace(
                 "window.webkit.messageHandlers.asrHandler.postMessage",
-                "window.webkit.messageHandlers.asr_handler.postMessage"
+                "window.webkit.messageHandlers.asr_handler.postMessage",
             )
             script = WebKit.UserScript.new(
                 adapted_js,
@@ -121,7 +122,7 @@ class LoginWindow:
 
         # Create window
         self._window = Gtk.Window()
-        self._window.set_title("Doubao Murmur - 登录")
+        self._window.set_title("豆包语音输入 - 登录")
         self._window.set_default_size(1280, 800)
         self._window.set_child(self._webview)
         self._window.connect("close-request", self._on_close_request)
@@ -326,6 +327,8 @@ class LoginWindow:
     def _on_close_request(self, window) -> bool:
         """Hide instead of destroy when user closes the window."""
         window.set_visible(False)
+        if self.on_close:
+            self.on_close()
         return True  # Prevent default destroy
 
     def logout(self) -> None:
@@ -401,6 +404,7 @@ class LoginWindow:
         """Load JS file from resources directory (../login/resources)."""
         try:
             from pathlib import Path
+
             here = Path(__file__).resolve().parent
             res = here.parent / "login" / "resources" / name
             return res.read_text(encoding="utf-8")
