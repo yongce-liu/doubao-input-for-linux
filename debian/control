@@ -2,8 +2,7 @@ Source: doubao-input
 Section: utils
 Priority: optional
 Maintainer: doubao-input contributors <code-dream@qq.com>
-Build-Depends:
- debhelper-compat (= 13),
+Build-Depends: debhelper-compat (= 13)
 Standards-Version: 4.6.2
 Homepage: https://github.com/wurong98/doubao-input-for-linux
 Rules-Requires-Root: no
@@ -12,25 +11,24 @@ Package: doubao-input
 Architecture: all
 Depends:
  ${misc:Depends},
+ python3 (>= 3.11),
+ libportaudio2,
+ wl-clipboard,
+ xclip,
+Recommends:
  python3-gi,
+ python3-cairo,
+ python3-gi-cairo,
+ gir1.2-gtk-3.0,
  gir1.2-gtk-4.0,
  gir1.2-webkit-6.0,
- libgtk-4-1,
- libwebkitgtk-6.0-4,
- wl-clipboard,
-Recommends:
- python3-pip,
- python3-venv,
-Suggests:
- python3-numpy,
-Description: Global push-to-hold voice input for Linux/Wayland
- Hold right-Ctrl, speak, release: the recognised text is pasted into
- the currently-focused input field. Backed by Doubao's streaming ASR.
+ python3-dev,
+ build-essential,
+Description: Lightweight push-to-hold voice input for Linux
+ Headless user-session service. Hold right Ctrl to record, release to
+ paste Doubao ASR text into the active application. The optional login
+ helper requires GTK4 and WebKit. The optional status badge uses GTK3
+ and Cairo on X11, or desktop notifications on Wayland.
  .
- This package installs the Python application, a systemd --user service
- for auto-start, and a postinst hook that:
-   * adds the installing user to the 'input' group so /dev/input/event*
-     and /dev/uinput are reachable without sudo, and
-   * creates a user-level venv at ~/.local/share/doubao-input/.venv
-     containing the pure-Python deps (websockets, sounddevice, evdev),
-     because those are not in Ubuntu's apt repos for python3-* .
+ Python dependencies are managed by the user with uv. Installation does
+ not download Python packages or start the microphone service as root.

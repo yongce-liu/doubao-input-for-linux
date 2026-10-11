@@ -35,7 +35,10 @@ else
     # dpkg-buildpackage wants the source tree to have a parent dir
     # matching the package name; build out-of-tree.
     TMP=$(mktemp -d)
-    cp -a "$ROOT/." "$TMP/doubao-input/"
+    mkdir -p "$TMP/doubao-input"
+    tar -C "$ROOT" --exclude='./.git' --exclude='./.venv' --exclude='__pycache__' \
+        --exclude='./build' --exclude='./dist' --exclude='*.deb' --exclude='*.log' \
+        --exclude='*.egg-info' -cf - . | tar -C "$TMP/doubao-input" -xf -
     cd "$TMP/doubao-input"
     dpkg-buildpackage -us -uc -b
     cp -a "$TMP"/doubao-input_*.* "$ROOT/" 2>/dev/null || true

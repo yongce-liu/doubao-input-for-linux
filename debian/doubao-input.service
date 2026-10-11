@@ -1,19 +1,14 @@
 [Unit]
-Description=豆包语音输入法 (Doubao Input)
-Documentation=https://github.com/wurong98/doubao-input-for-linux
+Description=Doubao lightweight voice input
 After=graphical-session.target
 PartOf=graphical-session.target
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/doubao-input
+ExecStart=/usr/bin/doubao-input serve
 Restart=on-failure
 RestartSec=3
-
-# Wayland / X11 都需要
-Environment=DISPLAY=:0
-Environment=GDK_BACKEND=wayland,x11
 Environment=PYTHONUNBUFFERED=1
 
 [Install]
-WantedBy=default.target
+WantedBy=graphical-session.target

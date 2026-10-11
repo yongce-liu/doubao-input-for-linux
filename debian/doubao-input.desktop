@@ -1,22 +1,11 @@
 [Desktop Entry]
 Type=Application
-Name=豆包语音输入法
-Name[en]=Doubao Voice Input
-GenericName=Voice Input Method
-Comment=按住右 Ctrl 说话,松开自动粘贴到当前输入框
-Comment[en]=Hold right-Ctrl, speak, release to paste into the active input
-Exec=doubao-input
-# Use absolute path (not theme name) so the launcher doesn't depend
-# on the icon-theme cache lookup, which GNOME Shell caches per-session
-# and won't refresh until logout/login.
-Icon=/usr/share/icons/hicolor/128x128/apps/doubao-input.png
+Name=豆包语音输入登录
+Name[en]=Doubao Voice Input Login
+Comment=登录或更新凭证；语音输入由用户后台服务运行
+Exec=doubao-input login
+Icon=doubao-input
 Terminal=false
 Categories=Utility;TextTools;AudioVideo;
 StartupNotify=false
 Keywords=voice;speech;input;asr;doubao;
-Actions=show-control;
-
-[Desktop Action show-control]
-Name=显示控制窗口
-Name[en]=Show Control Window
-Exec=doubao-input --show

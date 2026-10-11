@@ -1,93 +1,36 @@
 #!/bin/sh
-# postinst for doubao-input
-#
-# - Add the installing user to the 'input' group so they can read
-#   /dev/input/event* (evdev) and write /dev/uinput without sudo.
-# - Create a per-user Python venv at
-#   ~/.local/share/doubao-input/.venv with the pure-Python deps
-#   (websockets, sounddevice, evdev). These are not in Ubuntu's
-#   apt repos so we install them via pip into the user venv.
-# - Print a friendly summary.
-
+# 仅配置系统权限；不以 root 身份下载 Python 包，不自动启动录音服务。
 set -e
-
-USER_NAME="${SUDO_USER:-${USER:-}}"
-GROUP="input"
-VENV_DIR_REL=".local/share/doubao-input/.venv"
-
-case "$1" in
+case "${1:-}" in
     configure)
-        # ---- 1. group membership ----
-        if [ -z "$USER_NAME" ] || [ "$USER_NAME" = "root" ]; then
-            echo "doubao-input postinst:"
-            echo "  无法自动检测普通用户(root 安装 / 无 SUDO_USER)。"
-            echo "  请手动:"
-            echo "    sudo usermod -aG input <your-username>"
-            echo "  然后注销并重新登录。"
-        else
-            if id -nG "$USER_NAME" | tr ' ' '\n' | grep -qx "$GROUP"; then
-                echo "doubao-input postinst: 用户 $USER_NAME 已在 $GROUP 组。"
-                NEED_RELOGIN=0
-            else
-                echo "doubao-input postinst: 把用户 $USER_NAME 加入 $GROUP 组..."
-                usermod -aG "$GROUP" "$USER_NAME"
-                echo "  ✓ 已加入。请 **注销并重新登录** 让组权限生效。"
-                NEED_RELOGIN=1
-            fi
+        groupadd -f input
+        USER_NAME="${SUDO_USER:-}"
+        if [ -n "$USER_NAME" ] && [ "$USER_NAME" != root ]; then
+            usermod -aG input "$USER_NAME"
         fi
-
-        # ---- 2. user-level venv with pip-only deps ----
-        if [ -n "$USER_NAME" ] && [ "$USER_NAME" != "root" ] && \
-           command -v python3 >/dev/null 2>&1 && \
-           [ -x /usr/bin/python3 ]; then
-            USER_HOME=$(getent passwd "$USER_NAME" | cut -d: -f6)
-            if [ -n "$USER_HOME" ] && [ -d "$USER_HOME" ]; then
-                VENV_DIR="$USER_HOME/$VENV_DIR_REL"
-                mkdir -p "$(dirname "$VENV_DIR")"
-                chown "$USER_NAME":"$USER_NAME" "$(dirname "$VENV_DIR")" 2>/dev/null || true
-                if [ ! -x "$VENV_DIR/bin/python3" ]; then
-                    echo "doubao-input postinst: 为用户 $USER_NAME 创建 venv ($VENV_DIR)..."
-                    su -s /bin/sh "$USER_NAME" -c \
-                        "python3 -m venv '$VENV_DIR' --system-site-packages" \
-                        2>/dev/null || true
-                    su -s /bin/sh "$USER_NAME" -c \
-                        "'$VENV_DIR/bin/pip' install --quiet --upgrade pip && \
-                         '$VENV_DIR/bin/pip' install --quiet websockets sounddevice evdev numpy" \
-                        2>/dev/null || true
-                    echo "  ✓ venv 就绪。"
-                else
-                    echo "doubao-input postinst: venv 已存在 ($VENV_DIR)。"
-                fi
-            fi
+        if command -v modprobe >/dev/null 2>&1; then
+            modprobe uinput || true
         fi
-
-        # ---- 3. reload user's systemd manager ----
-        if command -v systemctl >/dev/null 2>&1 && \
-           [ -n "$USER_NAME" ] && [ "$USER_NAME" != "root" ]; then
-            USER_UID=$(id -u "$USER_NAME" 2>/dev/null || true)
-            if [ -n "$USER_UID" ]; then
-                XDG_RUNTIME_DIR="/run/user/$USER_UID"
-                if [ -d "$XDG_RUNTIME_DIR" ]; then
-                    su -s /bin/sh "$USER_NAME" -c \
-                        "XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR systemctl --user daemon-reload" \
-                        2>/dev/null || true
-                fi
-            fi
+        if command -v udevadm >/dev/null 2>&1; then
+            udevadm control --reload-rules || true
+            udevadm trigger --subsystem-match=misc --sysname-match=uinput || true
         fi
-
-        echo
-        echo "=== doubao-input 安装完成 ==="
-        echo "  启动方式(任选其一):"
-        echo "    1) 直接运行:doubao-input"
-        echo "    2) 常驻:    systemctl --user enable --now doubao-input.service"
-        echo
-        echo "  首次运行会弹出登录窗口,扫码登录豆包即可。"
-        if [ -n "$NEED_RELOGIN" ] && [ "$NEED_RELOGIN" = "1" ]; then
-            echo "  ⚠ 你刚被加入 input 组,**请先注销/重新登录**,否则 evdev/uinput 会无权限。"
-        fi
+        cat <<'HELP'
+豆包轻量版已安装；不会自动弹窗或启动录音。
+请以普通用户在桌面终端使用 uv 初始化环境：
+  uv venv --python /usr/bin/python3 --system-site-packages ~/.local/share/doubao-input/.venv
+  uv pip install --python ~/.local/share/doubao-input/.venv/bin/python -r /usr/share/doc/doubao-input/requirements.txt
+如果安装时无法确定普通用户，请手动 sudo usermod -aG input <用户名>。
+注销并重新登录后：
+  doubao-input login
+  doubao-input doctor
+  doubao-input serve
+需要自启时，在桌面终端运行：
+  systemctl --user import-environment DISPLAY XAUTHORITY WAYLAND_DISPLAY
+  systemctl --user daemon-reload
+  systemctl --user enable --now doubao-input.service
+HELP
         ;;
 esac
-
 #DEBHELPER#
-
 exit 0

@@ -54,7 +54,8 @@ Thumbs.db
 asr_params.json
 *.swp
 
-# Build artifacts (deb, dist)
+# Build artifacts (deb, dist, pyinstaller)
+*.spec
 *.deb
 *.tar.gz
 *.tar.bz2

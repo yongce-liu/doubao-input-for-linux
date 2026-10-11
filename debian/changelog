@@ -1,3 +1,11 @@
+doubao-input (1.1.0~dev1-1) noble; urgency=medium
+
+  * Add a headless asyncio user service and on-demand login CLI.
+  * Preserve buffered speech on release and isolate recording sessions.
+  * Use uv-managed Python dependencies; no package downloads in postinst.
+
+ -- doubao-input contributors <code-dream@qq.com>  Sun, 11 Oct 2026 16:22:46 +0800
+
 doubao-input (1.0.2-1) noble; urgency=medium
 
   * Logo: replaced white-backed assets with transparent-background

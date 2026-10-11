@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "doubao-input"
-version = "1.0.0"
-description = "Global push-to-hold voice input for Linux/Wayland, backed by Doubao ASR"
+version = "1.1.0.dev0"
+description = "Headless user-session voice input for Linux, backed by Doubao ASR"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
@@ -26,7 +26,7 @@ dependencies = [
 ]
 
 [project.urls]
-"Source" = "https://github.com/wurong98/doubao-input-for-linux"
+"Source" = "https://github.com/yongce-liu/doubao-input-for-linux"
 
 [project.scripts]
 doubao-input = "doubao_input.__main__:main"

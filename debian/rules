@@ -1,72 +1,25 @@
 #!/usr/bin/make -f
 
-# Minimal rules: install the source tree + supplementary files into
-# the standard Debian package layout. We avoid dh-python / pybuild to
-# keep the build environment dependency-free (we already verified
-# the source runs under the system Python 3.13 with system-site
-# packages).
-
 %:
 	dh $@
 
 override_dh_auto_build:
-	# No build step; we install pre-built sources.
+	# Python source package; no hidden network downloads during build.
 
 override_dh_auto_install:
-	# Install Python package into dist-packages
-	python3 -m installer --destdir=debian/doubao-input \
-	    --prefix=/usr --no-compile-bytecode dist/*.whl 2>/dev/null || \
 	install -d debian/doubao-input/usr/lib/python3/dist-packages
 	cp -r src/doubao_input debian/doubao-input/usr/lib/python3/dist-packages/
-	# Strip __pycache__ from the installed tree (don't ship .pyc on
-	# disk; Python will regenerate as needed, and shipping them makes
-	# the .deb larger and version-mismatched).
-	find debian/doubao-input/usr/lib/python3 -type d -name __pycache__ \
-	    -exec rm -rf {} + 2>/dev/null || true
-	find debian/doubao-input/usr/lib/python3 -name '*.pyc' -delete || true
-
-	# Wrapper script (avoid make's per-line shell; use printf)
-	install -d debian/doubao-input/usr/bin
-	printf '%s\n' \
-	    '#!/bin/sh' \
-	    '# Wrapper for the doubao-input voice IME.' \
-	    '# Pure-Python deps (websockets, sounddevice, evdev) live in' \
-	    '# the per-user venv at ~/.local/share/doubao-input/.venv' \
-	    '# (created by postinst); system Python provides gi / Gtk / WebKit.' \
-	    'VENV="$$HOME/.local/share/doubao-input/.venv"' \
-	    'if [ -x "$$VENV/bin/python3" ]; then' \
-	    '    exec "$$VENV/bin/python3" -m doubao_input "$$@"' \
-	    'else' \
-	    '    exec python3 -m doubao_input "$$@"' \
-	    'fi' \
-	    > debian/doubao-input/usr/bin/doubao-input
-	chmod 0755 debian/doubao-input/usr/bin/doubao-input
-
-	# Systemd user service
-	install -d debian/doubao-input/usr/lib/systemd/user
-	install -m 0644 debian/doubao-input.service \
-	    debian/doubao-input/usr/lib/systemd/user/doubao-input.service
-
-	# Desktop entry
-	install -d debian/doubao-input/usr/share/applications
-	install -m 0644 debian/doubao-input.desktop \
-	    debian/doubao-input/usr/share/applications/doubao-input.desktop
-
-	# App icon — hicolor theme (size 128 covers most uses including
-	# GNOME shell, app grid, and our own Gtk.Image buttons).
-	install -d debian/doubao-input/usr/share/icons/hicolor/128x128/apps
-	install -m 0644 src/doubao_input/resources/logo-128.png \
-	    debian/doubao-input/usr/share/icons/hicolor/128x128/apps/doubao-input.png
-	install -d debian/doubao-input/usr/share/icons/hicolor/scalable/apps
-	# Use the full-resolution PNG as the "scalable" placeholder; if a
-	# proper SVG is ever produced it should replace this file.
-	install -m 0644 src/doubao_input/resources/logo.png \
-	    debian/doubao-input/usr/share/icons/hicolor/scalable/apps/doubao-input.png
-
-	# Docs
+	find debian/doubao-input/usr/lib/python3 -type d -name __pycache__ -exec rm -rf {} +
+	find debian/doubao-input/usr/lib/python3 -name '*.pyc' -delete
+	install -D -m 0755 packaging/doubao-input.sh debian/doubao-input/usr/bin/doubao-input
+	install -D -m 0644 packaging/99-doubao-input-uinput.rules debian/doubao-input/usr/lib/udev/rules.d/99-doubao-input-uinput.rules
+	install -D -m 0644 packaging/doubao-input.conf debian/doubao-input/usr/lib/modules-load.d/doubao-input.conf
+	install -D -m 0644 src/doubao_input/resources/logo-128.png debian/doubao-input/usr/share/icons/hicolor/128x128/apps/doubao-input.png
 	install -d debian/doubao-input/usr/share/doc/doubao-input
-	install -m 0644 README.md LICENSE NOTICE docs/design.md \
-	    debian/doubao-input/usr/share/doc/doubao-input/
+	install -m 0644 README.md LICENSE NOTICE docs/lightweight.md packaging/requirements.txt debian/doubao-input/usr/share/doc/doubao-input/
+
+override_dh_compress:
+	dh_compress -Xrequirements.txt
 
 override_dh_missing:
 	dh_missing --fail-missing
