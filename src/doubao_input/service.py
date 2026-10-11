@@ -38,11 +38,13 @@ def selected_device():
 
 
 class VoiceService:
-    def __init__(self, *, use_shift=False, indicator=True, indicator_style="dock"):
+    def __init__(
+        self, *, paste_shortcut="auto", indicator=True, indicator_style="dock"
+    ):
         self.feedback = FeedbackClient(enabled=indicator, style=indicator_style)
         self.capture = AudioCapture()
         self.injector = Injector()
-        self.use_shift = use_shift
+        self.paste_shortcut = paste_shortcut
         self.task = None
         self.queue = None
         self.token = None
@@ -276,7 +278,7 @@ class VoiceService:
                 await asyncio.sleep(PASTE_DELAY)
                 paste = asyncio.create_task(
                     asyncio.to_thread(
-                        self.injector.inject, text, use_shift=self.use_shift
+                        self.injector.inject, text, self.paste_shortcut
                     )
                 )
                 try:
@@ -353,11 +355,11 @@ class VoiceService:
                 self.loop.remove_signal_handler(sig)
 
 
-def run_service(*, use_shift=False, indicator=True, indicator_style="dock"):
+def run_service(*, paste_shortcut="auto", indicator=True, indicator_style="dock"):
     with InstanceLock():
         asyncio.run(
             VoiceService(
-                use_shift=use_shift,
+                paste_shortcut=paste_shortcut,
                 indicator=indicator,
                 indicator_style=indicator_style,
             ).run()

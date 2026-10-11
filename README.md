@@ -111,12 +111,22 @@ doubao-input serve     # 启动服务（前台日志；托盘图标出现）
 之后按住右 Ctrl 说话即可；或左键点托盘图标。右键托盘图标可换麦克风、
 换快捷键（右 Ctrl / 右 Shift / 右 Alt，即改即用）、重新登录、退出。
 
+**终端里也能直接粘贴**：终端把 Ctrl+V 当成 readline 的 `quoted-insert`
+（插入字面字符），文字进不去。因此默认 `--paste-shortcut auto` 会在粘贴
+前读取焦点窗口的 `WM_CLASS`，识别出终端就自动改用终端自己的快捷键
+（多数是 Ctrl+Shift+V，xterm 系是 Shift+Insert），其它应用照常 Ctrl+V。
+每次只多花约 3ms，且只在粘贴时执行一次，不影响录音和识别。
+
+`doubao-input doctor` 会打印当前焦点窗口和将会使用的快捷键，便于自查。
+纯 Wayland（无 XWayland）无法查询焦点窗口，会退回 Ctrl+V，此时需用
+`--paste-shortcut` 手动指定。
+
 | 命令 | 作用 |
 |---|---|
 | `serve` | 语音输入 + 托盘图标（默认命令） |
 | `serve --indicator-style float` | 改用右下角浮标（录音时才出现） |
 | `serve --no-indicator` | 完全无界面运行 |
-| `serve --paste-shortcut ctrl-shift-v` | 终端类应用需要的粘贴快捷键 |
+| `serve --paste-shortcut ctrl-v` | 强制全部用 Ctrl+V（默认是 auto 自动判断） |
 | `indicator-demo` | 预览灰/绿/黄/红图标，不录音不联网 |
 | `login` | 登录 / 退出登录 |
 | `status` / `doctor` | 状态与自检（不输出识别文本或 cookie） |

@@ -21,7 +21,7 @@ import subprocess
 import threading
 import time
 
-from doubao_input import session_env
+from doubao_input import session_env, window_info
 from doubao_input.doubao.host_tools import command_candidates
 
 logger = logging.getLogger(__name__)
@@ -33,8 +33,20 @@ PASTE_DELAY = 0.08  # seconds
 
 # Linux keycodes (from linux/input-event-codes.h)
 KEY_LEFTCTRL = 29
-KEY_V = 47
 KEY_LEFTSHIFT = 42
+KEY_V = 47
+KEY_INSERT = 110
+
+# 支持的粘贴快捷键。auto 表示按焦点窗口自动选择：
+# 终端用终端自己的快捷键，其它应用用 Ctrl+V。
+PASTE_SHORTCUTS = ("auto", "ctrl-v", "ctrl-shift-v", "shift-insert")
+
+# 快捷键 -> (是否按 Ctrl, 是否按 Shift, 主键码)
+_SHORTCUT_KEYS = {
+    "ctrl-v": (True, False, KEY_V),
+    "ctrl-shift-v": (True, True, KEY_V),
+    "shift-insert": (False, True, KEY_INSERT),
+}
 
 
 class Injector:
@@ -46,23 +58,45 @@ class Injector:
 
     # ---- public ----
 
-    def inject(self, text: str, use_shift: bool = False) -> bool:
-        """Copy text to clipboard then synthesize Ctrl+V (or Ctrl+Shift+V)."""
+    def inject(self, text: str, shortcut: str = "auto") -> bool:
+        """Write text to the clipboard, then synthesize the paste shortcut."""
         if not text:
             return False
         with self._lock:
+            # 焦点窗口必须在写剪贴板之前判断：写剪贴板本身不影响焦点，
+            # 但提前判断可以让日志里记录的是真正生效的快捷键。
+            resolved = self.resolve_shortcut(shortcut)
             ok_copy = self._copy_to_clipboard(text)
             if not ok_copy:
                 logger.error("clipboard copy failed; cannot inject")
                 return False
             time.sleep(PASTE_DELAY)
-            ok_paste = self._simulate_paste(use_shift=use_shift)
-            return ok_paste
+            return self._simulate_paste(resolved)
 
-    def inject_via_uinput_only(self, use_shift: bool = False) -> bool:
-        """Just synthesize Ctrl+V (use when caller already filled clipboard)."""
+    def inject_via_uinput_only(self, shortcut: str = "auto") -> bool:
+        """Just synthesize the paste shortcut (caller already filled clipboard)."""
         with self._lock:
-            return self._simulate_paste(use_shift=use_shift)
+            return self._simulate_paste(self.resolve_shortcut(shortcut))
+
+    def resolve_shortcut(self, shortcut: str = "auto") -> str:
+        """把 auto 解析成具体快捷键；非 auto 的原样返回。"""
+        if shortcut not in PASTE_SHORTCUTS:
+            logger.warning("未知粘贴快捷键 %r，改用 ctrl-v", shortcut)
+            return "ctrl-v"
+        if shortcut != "auto":
+            return shortcut
+        try:
+            window_class = window_info.active_window_class()
+        except Exception as exc:  # noqa: BLE001 -- 焦点探测失败不应阻断粘贴
+            logger.debug("焦点窗口探测失败: %s", exc)
+            return "ctrl-v"
+        terminal_shortcut = window_info.terminal_shortcut(window_class or "")
+        if terminal_shortcut:
+            logger.info(
+                "焦点窗口 %s 是终端，使用 %s 粘贴", window_class, terminal_shortcut
+            )
+            return terminal_shortcut
+        return "ctrl-v"
 
     def close(self) -> None:
         with self._lock:
@@ -118,15 +152,23 @@ class Injector:
         # never happens.
         self._ui = evdev.UInput(
             events={
-                evdev.ecodes.EV_KEY: [KEY_LEFTCTRL, KEY_LEFTSHIFT, KEY_V],
+                evdev.ecodes.EV_KEY: [
+                    KEY_LEFTCTRL,
+                    KEY_LEFTSHIFT,
+                    KEY_V,
+                    KEY_INSERT,
+                ],
             },
             name="doubao-input-virtual-kbd",
         )
         logger.info("uinput virtual keyboard created")
         return self._ui
 
-    def _simulate_paste(self, use_shift: bool = False) -> bool:
-        """Send a Ctrl+V (or Ctrl+Shift+V) keypress through uinput."""
+    def _simulate_paste(self, shortcut: str = "ctrl-v") -> bool:
+        """Send the paste shortcut through uinput."""
+        ctrl, shift, key = _SHORTCUT_KEYS.get(
+            shortcut, _SHORTCUT_KEYS["ctrl-v"]
+        )
         try:
             ui = self._get_uinput()
             import time as _t
@@ -145,18 +187,20 @@ class Injector:
                 _t.sleep(GAP)
 
             # Press
-            emit(KEY_LEFTCTRL, 1)
-            if use_shift:
+            if ctrl:
+                emit(KEY_LEFTCTRL, 1)
+            if shift:
                 emit(KEY_LEFTSHIFT, 1)
-            emit(KEY_V, 1)
+            emit(key, 1)
             _t.sleep(GAP)
-            # Release
-            emit(KEY_V, 0)
-            if use_shift:
+            # Release（逆序释放，避免应用把中间态当成其他组合键）
+            emit(key, 0)
+            if shift:
                 emit(KEY_LEFTSHIFT, 0)
-            emit(KEY_LEFTCTRL, 0)
+            if ctrl:
+                emit(KEY_LEFTCTRL, 0)
             logger.info(
-                "paste: uinput ok (shift=%s, gap=%.0fms)", use_shift, GAP * 1000
+                "paste: uinput ok (shortcut=%s, gap=%.0fms)", shortcut, GAP * 1000
             )
             return True
         except Exception as e:

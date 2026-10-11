@@ -45,6 +45,8 @@ src/doubao_input/
 ├── trigger/evdev_ptt.py   后台线程 raw 读 /dev/input/event*；HOTKEYS 表 +
 │                          load/save_hotkey；不 grab 键盘；1s 重扫支持热插拔
 ├── inject/injector.py     wl-copy/xclip + UInput 注入；事件间隔 GAP=0.012 不能删
+├── window_info.py         读 _NET_ACTIVE_WINDOW 的 WM_CLASS，判断焦点窗口是不是终端
+├── session_env.py         运行时解析 DISPLAY/XAUTHORITY（systemd 环境里没有）
 └── login/resources/       WebView 注入 JS（profile 拦截 + localStorage 读取）
 
 tests/                     unittest（离线，假音频/假 WSS）；probe/ 是手动联调脚本
@@ -80,6 +82,9 @@ uv run --no-sync pyinstaller --onefile --name doubao-input ... packaging/binary_
 ## Things that have bitten before
 
 - uinput 事件间隔 GAP=0.012：去掉后 GTK 把 Ctrl+V 合并成无操作。
+- 终端不能收 Ctrl+V（readline 的 quoted-insert），必须 Ctrl+Shift+V 或
+  Shift+Insert；粘贴快捷键默认 auto，按焦点的 WM_CLASS 判断。新增 uinput
+  可发键码时必须同步加进 _get_uinput 的声明，否则内核静默丢弃。
 - 物理右 Ctrl 未松开就粘贴会和注入的 Ctrl 竞争；PASTE_DELAY 不能删。
 - evdev value=2 是自动重复，必须忽略，否则一次按键变多次。
 - 音频缓冲上限 64 块、最长录音 120 秒、<150ms 视为误触——都是刻意边界。

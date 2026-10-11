@@ -35,7 +35,8 @@
 
 - 未改变 16kHz / 4096 样本的录音格式。低延迟分块应通过真实录音测量后再调整。
 - 继续使用剪贴板和模拟粘贴，覆盖当前剪贴板；未实现恢复剪贴板、输入法协议注入或自动判断终端。
-- 默认 Ctrl+V，终端需要显式 `--paste-shortcut ctrl-shift-v`。
+- 粘贴快捷键默认 auto：粘贴前读焦点窗口 WM_CLASS，终端用 Ctrl+Shift+V
+  （xterm 系 Shift+Insert），其它应用 Ctrl+V。探测失败回退 Ctrl+V。
 - 没有音量波形或录音提示音，只提供麦克风状态图标。图标反映录音流/处理阶段，并不保证麦克风采集到了非零音量；音量仍通过 `test-mic` 检查。
 - 托盘图标基于 XEmbed `Gtk.StatusIcon`；GNOME/Wayland 默认不显示时退回系统通知，可用 AppIndicator 扩展。
 - Wayland 通知可能受勿扰模式影响，不能跨所有桌面强制定位在右下角。

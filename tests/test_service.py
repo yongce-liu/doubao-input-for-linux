@@ -85,7 +85,7 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
             self.assertIsNone(self.engine.task)
         self.assertEqual(chunks, [b"audio", b"audio"])
         self.assertEqual(self.engine.injector.inject.call_count, 2)
-        self.engine.injector.inject.assert_called_with("测试文本", use_shift=False)
+        self.engine.injector.inject.assert_called_with("测试文本", "auto")
 
     async def test_audio_scheduled_before_release_precedes_end_marker(self):
         chunks = self.mock_recognition()

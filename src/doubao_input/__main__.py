@@ -11,6 +11,8 @@ import sys
 import time
 from pathlib import Path
 
+from doubao_input.inject.injector import PASTE_SHORTCUTS
+
 
 def parser():
     result = argparse.ArgumentParser(
@@ -20,7 +22,10 @@ def parser():
     commands = result.add_subparsers(dest="command")
     serve = commands.add_parser("serve", help="运行后台核心（默认命令）")
     serve.add_argument(
-        "--paste-shortcut", choices=["ctrl-v", "ctrl-shift-v"], default="ctrl-v"
+        "--paste-shortcut",
+        choices=list(PASTE_SHORTCUTS),
+        default="auto",
+        help="auto=按焦点窗口自动选择（默认）；终端会自动改用 Ctrl+Shift+V",
     )
     serve.add_argument("--no-indicator", action="store_true", help="禁用麦克风状态图标")
     serve.add_argument(
@@ -122,6 +127,15 @@ def doctor():
         print(f"{'OK' if passed else 'FAIL'}: {name}")
     print("选定设备:", selected_device())
     print("后台状态:", json.dumps(read_status(), ensure_ascii=False))
+    try:
+        from doubao_input.inject.injector import Injector
+        from doubao_input.window_info import active_window_class
+
+        focused = active_window_class()
+        print("当前焦点窗口:", focused or "无法判断（Wayland 或没有焦点窗口）")
+        print("将使用的粘贴快捷键:", Injector().resolve_shortcut("auto"))
+    except Exception as exc:  # noqa: BLE001 -- 诊断命令不应因探测失败而崩溃
+        print("粘贴快捷键探测失败:", exc)
     return 0 if all(checks.values()) else 1
 
 
@@ -178,7 +192,7 @@ def main(argv=None) -> int:
             from doubao_input.service import run_service
 
             return run_service(
-                use_shift=getattr(args, "paste_shortcut", "ctrl-v") == "ctrl-shift-v",
+                paste_shortcut=getattr(args, "paste_shortcut", "auto"),
                 indicator=not getattr(args, "no_indicator", False),
                 indicator_style=getattr(args, "indicator_style", "dock"),
             )

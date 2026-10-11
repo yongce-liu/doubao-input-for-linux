@@ -90,15 +90,11 @@ PASTE_DELAY = 0.05  # seconds between copy and paste simulation
 AUTH_EXPIRY_DELAY = 2.0  # seconds before resetting after auth error
 
 # --- Paste shortcut ---
-# True  -> synthesize Ctrl+Shift+V. Works in GNOME Terminal, Konsole,
-#          Alacritty, kitty, xfce4-terminal, VSCode, gedit, Chromium, ...
-# False -> synthesize Ctrl+V. Works in GUI apps (VSCode, gedit, browser)
-#          but NOT in terminals (terminals treat Ctrl+V as the tty "lnext"
-#          literal-next-char escape, inherited from readline's history).
-# Default is True because we inject plain text and Ctrl+Shift+V is the
-# Wayland/GNOME convention; flip to False if a specific GUI app refuses
-# to accept the paste.
-INJECT_USE_SHIFT = True
+# 默认 auto：注入前读取焦点窗口的 WM_CLASS，是终端就用终端自己的粘贴
+# 快捷键（多数 Ctrl+Shift+V，xterm 系 Shift+Insert），否则用 Ctrl+V。
+# 终端里 Ctrl+V 会被 readline 当成 quoted-insert（^V），文字进不去。
+# 可用 `serve --paste-shortcut ctrl-v|ctrl-shift-v|shift-insert` 覆盖。
+DEFAULT_PASTE_SHORTCUT = "auto"
 
 # --- Overlay UI ---
 

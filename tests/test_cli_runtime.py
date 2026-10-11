@@ -45,21 +45,21 @@ assert 'doubao_input.login_app' not in sys.modules
         with patch("doubao_input.service.run_service", return_value=0) as run:
             self.assertEqual(cli.main([]), 0)
             run.assert_called_once_with(
-                use_shift=False, indicator=True, indicator_style="dock"
+                paste_shortcut="auto", indicator=True, indicator_style="dock"
             )
 
     def test_indicator_can_be_disabled(self):
         with patch("doubao_input.service.run_service", return_value=0) as run:
             cli.main(["serve", "--no-indicator"])
             run.assert_called_once_with(
-                use_shift=False, indicator=False, indicator_style="dock"
+                paste_shortcut="auto", indicator=False, indicator_style="dock"
             )
 
     def test_terminal_paste_is_explicit(self):
         with patch("doubao_input.service.run_service", return_value=0) as run:
             cli.main(["serve", "--paste-shortcut", "ctrl-shift-v"])
             run.assert_called_once_with(
-                use_shift=True, indicator=True, indicator_style="dock"
+                paste_shortcut="ctrl-shift-v", indicator=True, indicator_style="dock"
             )
 
     def test_install_service_does_not_start_or_overwrite(self):
