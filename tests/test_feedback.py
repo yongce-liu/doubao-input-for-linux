@@ -192,3 +192,22 @@ class FeedbackEventTests(unittest.TestCase):
 
     def test_poll_events_without_process(self):
         self.assertIsNone(FeedbackClient(enabled=False).poll_events())
+
+
+class DisplayWaitTests(unittest.TestCase):
+    def test_start_without_display_waits_instead_of_disabling(self):
+        client = FeedbackClient(style="dock")
+        with patch.dict(os.environ, {}, clear=True):
+            client.start()
+        self.assertTrue(client.awaiting_display)
+        self.assertFalse(client.running)
+
+    def test_no_indicator_never_waits(self):
+        client = FeedbackClient(enabled=False, style="dock")
+        with patch.dict(os.environ, {}, clear=True):
+            client.start()
+        self.assertFalse(client.awaiting_display)
+        self.assertFalse(client.wanted)
+
+    def test_style_none_is_not_wanted(self):
+        self.assertFalse(FeedbackClient(style="none").wanted)

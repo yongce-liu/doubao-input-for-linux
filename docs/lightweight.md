@@ -9,6 +9,7 @@
 - `login` 为独立进程：只在用户主动调用时打开；成功或关闭窗口后退出。
 - 托盘图标可交互：左键点击等同按下/松开右 Ctrl；右键菜单提供麦克风选择、快捷键选择（右 Ctrl / 右 Shift / 右 Alt，运行时切换）、登录、退出。事件经托盘进程 stdout 回传核心，服务用 asyncio 读取。
 - `login` 已保存凭证时先询问"保持登录 / 退出登录"，退出时清空本地凭证与 WebKit 会话后才打开网页重新登录。
+- 自启 unit 用 `WantedBy=default.target`（Cinnamon/XFCE 不激活 graphical-session.target）；若启动时还没有 DISPLAY，服务每 5 秒重试挂载托盘图标。
 - 服务/托盘/麦克风测试共用用户实例锁，避免进程之间争抢设备。
 - 凭证路径沿用 `~/.config/doubao-input/asr_params.json`（支持 XDG_CONFIG_HOME）。新保存凭证原子写入、权限 0600。
 

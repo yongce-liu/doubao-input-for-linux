@@ -140,10 +140,11 @@ def install_service():
     if "\n" in executable or "\r" in executable:
         raise ValueError("Python 路径不能含换行符")
     flags = "" if getattr(sys, "frozen", False) else "-m doubao_input "
+    # 用 default.target 而非 graphical-session.target：Cinnamon/XFCE 等桌面
+    # 不激活后者，会导致开机不自启。服务自身会在桌面会话就绪后补挂状态图标。
     content = f'''[Unit]
 Description=Doubao lightweight voice input
 After=graphical-session.target
-PartOf=graphical-session.target
 
 [Service]
 Type=simple
@@ -153,7 +154,7 @@ RestartSec=3
 Environment=PYTHONUNBUFFERED=1
 
 [Install]
-WantedBy=graphical-session.target
+WantedBy=default.target
 '''
     if unit.exists():
         raise RuntimeError(f"服务文件已存在，未覆盖：{unit}；请先检查并备份旧配置")

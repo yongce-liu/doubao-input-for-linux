@@ -139,8 +139,24 @@ journalctl --user -u doubao-input.service -f     # 日志
 systemctl --user stop doubao-input.service       # 停止
 ```
 
-服务跟随 `graphical-session.target`，跑在用户会话里（语音输入必须能访问
-麦克风与剪贴板），不需要 root。
+跑在用户会话里（语音输入必须能访问麦克风与剪贴板），不需要 root。
+
+unit 使用 `WantedBy=default.target` 而不是 `graphical-session.target`：
+Cinnamon、XFCE 等桌面从不激活后者，用它会导致开机不自启。开机时
+systemd 用户实例可能早于桌面会话导入 `DISPLAY`，服务检测不到显示会话
+会先正常启动语音核心，并在桌面就绪后自动补挂托盘图标；也可在桌面终端
+执行一次 `systemctl --user import-environment DISPLAY XAUTHORITY` 立即生效。
+
+二进制建议放到稳定路径再注册服务，避免依赖仓库目录：
+
+```bash
+install -m755 dist/doubao-input ~/.local/bin/doubao-input   # 无需管理员
+# 或全局安装：
+sudo install -m755 dist/doubao-input /usr/local/bin/doubao-input
+```
+
+`install-service` 把当前可执行文件的绝对路径写进 unit；换位置后需先删除
+`~/.config/systemd/user/doubao-input.service` 再重新生成。
 
 ## 测试
 

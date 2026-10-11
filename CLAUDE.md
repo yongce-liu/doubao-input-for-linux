@@ -85,4 +85,7 @@ uv run --no-sync pyinstaller --onefile --name doubao-input ... packaging/binary_
 - 音频缓冲上限 64 块、最长录音 120 秒、<150ms 视为误触——都是刻意边界。
 - 冻结二进制缺的模块要显式 --hidden-import（如 optparse）；GTK 系必须
   --exclude-module，运行时靠 binary_entry.py 追加系统 dist-packages。
+- 自启 unit 必须用 WantedBy=default.target：Cinnamon/XFCE 不会激活
+  graphical-session.target，用它等于开机不自启；DISPLAY 竞态由
+  VoiceService._await_display 每 5 秒重试兜住。
 - ruff 会重排 import；用字符串替换打补丁前断言旧串存在。

@@ -1,7 +1,7 @@
 import asyncio
 import unittest
 from contextlib import ExitStack
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from doubao_input import service
 from doubao_input.streaming import AuthenticationError
@@ -219,3 +219,29 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
         self.engine.stop_event = asyncio.Event()
         self.engine.handle_event("hotkey:bogus")
         self.assertEqual(self.engine.state, "error")
+
+    async def test_service_picks_up_tray_icon_when_display_appears_late(self):
+        """开机自启竞态：先无 DISPLAY，桌面就绪后补挂状态图标。"""
+        self.engine.stop_event = asyncio.Event()
+        self.engine.feedback = Mock(
+            wanted=True, running=False, has_display=lambda: True
+        )
+        self.engine.feedback.event_fd.return_value = None
+        task = asyncio.create_task(self.engine._await_display(interval=0.01))
+        await asyncio.sleep(0.05)
+        self.engine._closing = True
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+        self.engine.feedback.start.assert_called()
+
+    async def test_no_display_keeps_waiting_without_starting_icon(self):
+        self.engine.stop_event = asyncio.Event()
+        self.engine.feedback = Mock(
+            wanted=True, running=False, has_display=lambda: False
+        )
+        task = asyncio.create_task(self.engine._await_display(interval=0.01))
+        await asyncio.sleep(0.05)
+        self.engine._closing = True
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+        self.engine.feedback.start.assert_not_called()

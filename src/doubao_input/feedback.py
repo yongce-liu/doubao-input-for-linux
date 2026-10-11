@@ -28,14 +28,31 @@ class FeedbackClient:
         self.style = style
         self.process = None
         self.warned = False
+        self.awaiting_display = False
         self.event_buffer = b""
 
+    @property
+    def wanted(self):
+        """是否期望有状态图标（用于决定要不要等待桌面会话）。"""
+        return self.enabled and self.style != "none"
+
+    @staticmethod
+    def has_display():
+        return bool(
+            os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")
+        )
+
     def start(self):
-        if not self.enabled or self.style == "none":
+        if not self.wanted:
             return
-        if not (os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")):
-            logger.warning("没有桌面显示环境，状态浮标已禁用；语音核心仍可运行")
+        if not self.has_display():
+            # 开机自启时 systemd 可能早于桌面会话导入 DISPLAY；稍后重试。
+            self.awaiting_display = True
+            if not self.warned:
+                logger.warning("尚未检测到桌面会话，状态图标稍后自动重试")
+                self.warned = True
             return
+        self.awaiting_display = False
         try:
             command = (
                 [sys.executable, "_indicator"]
@@ -76,6 +93,10 @@ class FeedbackClient:
                 self.process.terminate()
             except OSError:
                 pass
+
+    @property
+    def running(self):
+        return self.process is not None
 
     def event_fd(self):
         if self.process is None or self.process.stdout is None:

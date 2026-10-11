@@ -52,6 +52,8 @@ class VoiceService:
         self.state = "idle"
         self.trigger = None
         self.login_task = None
+        self.event_fd = None
+        self.display_task = None
         self._closing = False
 
     def set_state(self, state, error=None):
@@ -191,15 +193,41 @@ class VoiceService:
         if not self._closing and self.state in ("idle", "login-required"):
             self.set_state("idle" if ParamsStore.load() else "login-required")
 
+    def _register_feedback_reader(self):
+        fd = self.feedback.event_fd()
+        if fd is None or fd == self.event_fd:
+            return
+        self._unregister_feedback_reader()
+        self.event_fd = fd
+        self.loop.add_reader(fd, self._read_feedback_events)
+
+    def _unregister_feedback_reader(self):
+        if self.event_fd is None:
+            return
+        self.loop.remove_reader(self.event_fd)
+        self.event_fd = None
+
     def _read_feedback_events(self):
         events = self.feedback.poll_events()
         if events is None:
-            # 浮标进程退出；停止读取，服务继续运行。
-            if self.loop is not None and self.feedback.event_fd() is not None:
-                self.loop.remove_reader(self.feedback.event_fd())
+            # 图标进程退出；停止读取，服务继续运行。
+            self._unregister_feedback_reader()
             return
         for event in events:
             self.handle_event(event)
+
+    async def _await_display(self, interval=5.0):
+        """开机自启时桌面会话可能晚于本服务就绪，就绪后补挂状态图标。"""
+        while not self._closing:
+            await asyncio.sleep(interval)
+            if self._closing:
+                return
+            if self.feedback.running or not self.feedback.wanted:
+                continue
+            if not self.feedback.has_display():
+                continue
+            self.feedback.start()
+            self._register_feedback_reader()
 
     def release(self):
         if self.task is None or self.pressed_at is None:
@@ -281,17 +309,19 @@ class VoiceService:
         for sig in (signal.SIGINT, signal.SIGTERM):
             self.loop.add_signal_handler(sig, self.stop_event.set)
         self.feedback.start()
-        event_fd = self.feedback.event_fd()
-        if event_fd is not None:
-            self.loop.add_reader(event_fd, self._read_feedback_events)
+        self._register_feedback_reader()
+        if self.feedback.wanted:
+            self.display_task = asyncio.create_task(self._await_display())
         self.set_state("idle" if ParamsStore.load() else "login-required")
         try:
             self._start_trigger()
             await self.stop_event.wait()
         finally:
             self._closing = True
-            if event_fd is not None:
-                self.loop.remove_reader(event_fd)
+            self._unregister_feedback_reader()
+            if self.display_task is not None:
+                self.display_task.cancel()
+                await asyncio.gather(self.display_task, return_exceptions=True)
             if self.trigger is not None:
                 self.trigger.stop()
             if self.login_task is not None and not self.login_task.done():
