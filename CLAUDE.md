@@ -1,135 +1,88 @@
 # CLAUDE.md
 
-Project-specific guidance for Claude Code working on **doubao-input** (豆包语音输入法 for Linux).
+Project guidance for working on **doubao-input** (豆包语音输入 Linux 轻量版).
 
 ## What this is
 
-A push-to-hold voice input method for **GNOME / Wayland**. Press **right Ctrl** → speak → release →
-recognized text is `wl-copy`-ed and `uinput`-injected as **Ctrl+V** into the currently-focused input
-field. The riskiest piece (reversing Doubao's web ASR WSS) is vendored from upstream
-[`doubao-murmur`](https://github.com/yourname/doubao-murmur) under `src/doubao_input/doubao/`. The
-parts that are *not* vendored — `trigger/`, `inject/`, `ui/`, `app.py`, `__main__.py` — are original.
+Press-and-hold voice input for Linux desktops (X11 优先，Wayland 降级到系统通知).
+按住右 Ctrl 说话，松开后识别结果经剪贴板 + uinput 以 Ctrl+V 粘入当前焦点输入框。
+无常驻窗口；状态由系统托盘图标反馈（待机灰/录音绿/处理黄/错误红）。
 
-Full design lives in [`docs/design.md`](docs/design.md). Read it before making architecture changes.
+架构分三个进程，核心不加载任何 GUI 库：
+
+1. **核心服务**（`serve`，asyncio 主循环）——evdev 热键、录音、ASR、粘贴。
+2. **托盘图标子进程**（`_indicator`）——stdin 只收状态枚举，stdout 只回
+   `event:*` 命令行；双向绝不传识别文本、音频或凭证。
+3. **登录子进程**（`login`，WebKit 按需加载）——成功提取凭证后退出，
+   服务下一次按键自动读取。
+
+`doubao/` 协议层最初移植自上游 doubao-murmur（MIT，见 NOTICE）；轻量版已重构，
+`streaming.py` 的 asyncio 协程是唯一识别路径。设计见 docs/lightweight.md。
 
 ## File map
 
 ```
 src/doubao_input/
-├── __main__.py            Entry: `python -m doubao_input`
-├── app.py                 GtkApplication. Wires trigger → TM → overlay/injector.
-│                          Wraps AudioCapture.start/stop to pipe RMS to the overlay.
-│                          Hides overlay+control window before paste so injected Ctrl+V
-│                          reaches the user's input field, not our widgets.
-│
-├── doubao/                VENDORED from doubao-murmur (see NOTICE). Lightly patched.
-│   ├── asr_client.py       WSS client to ws-samantha.doubao.com.
-│   ├── audio_capture.py    sounddevice 16kHz/mono/int16. Added `_on_rms` callback.
-│   ├── params_store.py     JSON persistence of {cookies, device_id, web_id}.
-│   ├── config.py           Fixed Doubao params, paths, timeouts. IMPORTANT: also
-│   │                       hosts AUTH_ERROR_CODE=709599054 used by asr_client to
-│   │                       detect session expiry.
-│   ├── app_state.py        GObject observable state (LoginStatus, RecordingState).
-│   ├── login_window.py     WebKitGTK login + JS hook for /alice/profile/self.
-│   ├── transcription.py    State machine. Upstream had handle_toggle(); this fork
-│   │                       adds handle_press() / handle_release() + 150ms debounce
-│   │                       (MIN_PRESS_DURATION) to convert toggle → push-to-hold.
-│   └── host_tools.py       wl-copy / xclip candidate lists.
-│
-├── trigger/evdev_ptt.py    Background thread reads /dev/input/event* raw, picks
-│                           EV_KEY/KEY_RIGHTCTRL edges (value=1→press, 0→release,
-│                           2=autorepeat ignored), forwards via GLib.idle_add.
-│                           Does NOT grab the keyboard. Rescans every 1s for hot-plug.
-│
-├── inject/injector.py      wl-copy (or xclip fallback) then UInput Ctrl+V (or
-│                           Ctrl+Shift+V if use_shift=True). 12ms gap between key
-│                           events (GAP=0.012) — without it GTK coalesces press/
-│                           release and the paste shortcut never registers. uinput
-│                           device is created lazily and kept alive for process life.
-│
-├── login/resources/        inject-websocket.js, inject-dom.js — loaded by WebView
-│                           to intercept /alice/profile/self + read localStorage.
-│
-└── ui/
-    ├── overlay.py          Top-center "waveform capsule" (PttOverlay). Non-focusable
-    │                       (set_can_focus(False)). Reads RMS, draws scrolling bars,
-    │                       wraps transcription text up to OVERLAY_MAX_LINES.
-    └── control_window.py   Login / help / mic-test / paste-test / quit.
+├── __main__.py            CLI：serve(默认)/login/status/devices/set-device/
+│                          test-mic/doctor/install-service/_indicator/indicator-demo
+├── service.py             VoiceService：asyncio 状态机 + 托盘事件处理。
+│                          idle→connecting→recording→finishing→pasting→idle
+├── streaming.py           recognize(): 队列 → ASR 的 asyncio 协程（有界队列 64 块）
+├── feedback.py            FeedbackClient：拉托盘子进程，写状态 / poll_events 读事件
+├── indicator.py           托盘进程：DockStatusIcon(StatusIcon)/X11Badge/通知；
+│                          左键 toggle、右键菜单（mic/hotkey/login/quit）
+├── indicator_art.py       cairo 矢量图标绘制
+├── login_app.py           登录入口：有凭证先询问"保持登录/退出登录"
+├── runtime.py             InstanceLock(flock) + status.json 原子写入
+├── doubao/
+│   ├── asr_client.py      WSS 协议（唯一 import websockets 的模块）
+│   ├── audio_capture.py   sounddevice 16kHz/mono/int16
+│   ├── config.py          常量、超时、XDG 路径（新常量放这里）
+│   ├── login_window.py    WebKit 登录窗口 + JS 注入 + 凭证提取
+│   ├── params_store.py    asr_params.json 读写（0600 + 原子写入）
+│   ├── app_state.py       LoginStatus 枚举
+│   └── host_tools.py      wl-copy / xclip 探测
+├── trigger/evdev_ptt.py   后台线程 raw 读 /dev/input/event*；HOTKEYS 表 +
+│                          load/save_hotkey；不 grab 键盘；1s 重扫支持热插拔
+├── inject/injector.py     wl-copy/xclip + UInput 注入；事件间隔 GAP=0.012 不能删
+└── login/resources/       WebView 注入 JS（profile 拦截 + localStorage 读取）
 
-tests/probe/                Manual verification scripts (NOT pytest). P5_login.py and
-                           P6_asr.py confirm Doubao login + ASR round-trip still works.
-
-start.sh                    `PYTHONPATH=src .venv/bin/python -m doubao_input`
+tests/                     unittest（离线，假音频/假 WSS）；probe/ 是手动联调脚本
+packaging/                 binary_entry.py(PyInstaller 入口)、build-deb.sh、udev 规则
 ```
 
 ## Commands
 
 ```bash
-# Run
-./start.sh
-# Equivalent to: PYTHONPATH=src .venv/bin/python -m doubao_input
+# 开发与测试统一用 uv（AGENTS.md 要求）
+uv run --no-sync python -m doubao_input serve
+uv run --no-sync python -m unittest discover -s tests -p 'test_*.py'
+./start.sh serve            # 等价快捷方式
 
-# Verify login + ASR (manually, in order)
-.venv/bin/python tests/probe/P5_login.py    # opens login window, writes credentials
-.venv/bin/python tests/probe/P6_asr.py      # 5-second ASR round-trip with saved creds
+# 手动联调（需要真实桌面与登录）
+.venv/bin/python tests/probe/P5_login.py
+.venv/bin/python tests/probe/P6_asr.py
 
-# Diagnostic: enumerate keyboards and watch right-Ctrl (sudo-free if user is in `input`)
-python -c "import evdev; [print(p) for p in evdev.list_devices()]"
-evtest                                       # apt install evtest; pick keyboard device
-
-# Diagnostic: clipboard alone
-wl-copy "abc" && wl-paste
+# 打包单文件二进制（README 有完整命令）
+uv run --no-sync pyinstaller --onefile --name doubao-input ... packaging/binary_entry.py
 ```
-
-There is **no pytest suite yet**. State-machine logic in `transcription.py` is unit-testable but
-not currently wired up — tests/probe/ are manual-only.
 
 ## Conventions
 
-- **Language**: explanatory text and comments in Chinese, identifiers in English. Log messages
-  are mixed (often English) since they show up in crash reports.
-- **Threading**: long-running I/O (evdev, WSS, audio callback) runs on background threads. **All
-  UI / GTK / GObject touches must happen on the GTK main thread.** Use `GLib.idle_add(fn, ...)`
-  to marshal. The pattern in `EvdevPtt._dispatch()` is canonical.
-- **Logging**: every module gets `logger = logging.getLogger(__name__)`. Keep INFO messages
-  short and grep-friendly (e.g. `clipboard: wl-copy ok`, `paste: uinput ok`).
-- **Vendored code**: do NOT rewrite `src/doubao_input/doubao/` without checking upstream first.
-  Each file's docstring cites the original Swift source. Changes are listed in [`NOTICE`](NOTICE).
-- **Timeouts / constants**: live in `src/doubao_input/doubao/config.py`. Add new constants there,
-  not as magic numbers in callers.
+- UI 文本与注释用中文，标识符用英文；日志保持 INFO 短句、可 grep。
+- 核心进程禁止 import gi/GTK/WebKit/Cairo；GUI 代码只能出现在 indicator.py 与
+  login 相关模块。service.py 与托盘子进程之间只传固定状态/命令字符串。
+- evdev/PortAudio 的线程回调只投递到 asyncio 循环（call_soon_threadsafe），
+  不做业务逻辑。
+- 凭证/识别文本不落日志、不落 status.json；网络异常的完整 URL 不打日志。
+- 改协议前先看 asr_client.py 与 docs/lightweight.md 的"尚未声称解决的问题"。
 
 ## Things that have bitten before
 
-- **uinput without delay** — sending Ctrl down/up too fast causes GTK apps to coalesce the
-  sequence into a no-op. `injector.py` uses `GAP = 0.012` between every event. Don't remove it.
-- **Injecting while our window is focused** — the injected Ctrl+V goes to *our* text widgets,
-  not the user's input field. `app._do_paste` hides both overlay + control window before
-  injecting, then restores the control window after 600ms. Don't bypass this.
-- **Injecting before physical right-Ctrl is released** — uinput's Ctrl+V races with the
-  physical right-Ctrl still-down. `PASTE_DELAY + 0.10` second wait in `app._do_paste` covers it.
-- **Forgetting evdev autorepeat** — `value=2` events must be ignored or one press becomes many.
-  See `EvdevPtt._dispatch`.
-- **Mocking `audio_capture` / `asr_client` in tests** — `transcription.py` accepts replacements
-  for these on its instance (look at how `app.py` does `tm.audio_capture = self._audio_capture`).
-  Use the same pattern for unit tests rather than monkey-patching the class globally.
-- **`gi.require_version` must be called before importing Gtk/WebKit** — both `app.py` and
-  `tests/probe/P6_asr.py` do this. If you add a new probe, copy the line.
-- **GNOME 48 has no StatusNotifierItem by default** — `ui.tray` (if added) must degrade silently,
-  not fail. The control window + `.desktop` file are the always-available entry points.
-
-## Vendoring / license
-
-- Project license: MIT — see [`LICENSE`](LICENSE).
-- `src/doubao_input/doubao/` is from `doubao-murmur` (MIT). When porting a change from upstream,
-  update the docstring attribution in the affected file and amend [`NOTICE`](NOTICE) if the
-  delta is non-trivial.
-
-## What "done" looks like for a change
-
-- Touched files compile (`python -m compileall src/doubao_input`).
-- If you changed behavior, P5 + P6 still pass.
-- If you changed UI, manually verify in a real Wayland session: focus gedit, press right Ctrl,
-  speak, release — text lands in gedit, overlay fades, focus stays on gedit.
-- If you changed `transcription.py`, write a pytest that drives the state machine with fake
-  `AudioCapture` / `ASRClient` and asserts: short-press cancels, normal press/release pastes
-  final text, late result still pastes within the 1s safety timeout.
+- uinput 事件间隔 GAP=0.012：去掉后 GTK 把 Ctrl+V 合并成无操作。
+- 物理右 Ctrl 未松开就粘贴会和注入的 Ctrl 竞争；PASTE_DELAY 不能删。
+- evdev value=2 是自动重复，必须忽略，否则一次按键变多次。
+- 音频缓冲上限 64 块、最长录音 120 秒、<150ms 视为误触——都是刻意边界。
+- 冻结二进制缺的模块要显式 --hidden-import（如 optparse）；GTK 系必须
+  --exclude-module，运行时靠 binary_entry.py 追加系统 dist-packages。
+- ruff 会重排 import；用字符串替换打补丁前断言旧串存在。
