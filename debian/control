@@ -4,31 +4,29 @@ Priority: optional
 Maintainer: doubao-input contributors <code-dream@qq.com>
 Build-Depends: debhelper-compat (= 13)
 Standards-Version: 4.6.2
-Homepage: https://github.com/wurong98/doubao-input-for-linux
+Homepage: https://github.com/yongce-liu/doubao-input-for-linux
 Rules-Requires-Root: no
 
 Package: doubao-input
-Architecture: all
+Architecture: any
 Depends:
  ${misc:Depends},
- python3 (>= 3.11),
+ libc6 (>= 2.35),
  libportaudio2,
+ libasound2-plugins,
  wl-clipboard,
  xclip,
-Recommends:
- python3-gi,
- python3-cairo,
- python3-gi-cairo,
- gir1.2-gtk-3.0,
- gir1.2-gtk-4.0,
- gir1.2-webkit-6.0,
- python3-dev,
- build-essential,
+ x11-utils,
+ dbus-user-session,
+ udev,
+ kmod,
+ passwd,
 Description: Lightweight push-to-hold voice input for Linux
  Headless user-session service. Hold right Ctrl to record, release to
  paste Doubao ASR text into the active application. The optional login
- helper requires GTK4 and WebKit. The optional status badge uses GTK3
- and Cairo on X11, or desktop notifications on Wayland.
+ helper uses an installed Chrome/Chromium browser. Status feedback uses
+ D-Bus StatusNotifierItem or desktop notifications without GTK bindings.
  .
- Python dependencies are managed by the user with uv. Installation does
- not download Python packages or start the microphone service as root.
+ Python and its dependencies are bundled. No Python, pip or uv setup is
+ required on the target system. Enable the systemd user service to start
+ voice input automatically at login.

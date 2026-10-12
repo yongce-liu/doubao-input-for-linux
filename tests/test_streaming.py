@@ -1,6 +1,7 @@
 import asyncio
 import json
 import unittest
+from urllib.parse import parse_qs, urlparse
 
 from doubao_input.doubao.params_store import ASRParams
 from doubao_input.streaming import AuthenticationError, recognize
@@ -34,6 +35,48 @@ class Socket:
 
 
 class StreamingTests(unittest.IsolatedAsyncioTestCase):
+    async def test_url_and_headers_preserve_protocol_parameters(self):
+        socket = Socket()
+        queue = asyncio.Queue()
+        queue.put_nowait(None)
+        socket.incoming.put_nowait({"event": "finish"})
+
+        def connect(url, **kwargs):
+            query = parse_qs(urlparse(url).query)
+            self.assertEqual(query["device_id"], [PARAMS.device_id])
+            self.assertEqual(query["web_id"], [PARAMS.web_id])
+            self.assertEqual(query["tea_uuid"], [PARAMS.web_id])
+            self.assertEqual(query["format"], ["pcm"])
+            self.assertTrue(query["web_tab_id"][0])
+            self.assertEqual(
+                kwargs["additional_headers"]["Cookie"], PARAMS.cookie_header
+            )
+            return socket
+
+        await recognize(PARAMS, queue, connect=connect)
+
+    async def test_default_timeout_keeps_final_sentence_arriving_after_one_second(self):
+        socket = Socket()
+        queue = asyncio.Queue()
+        queue.put_nowait(None)
+
+        async def results():
+            socket.incoming.put_nowait(
+                {"event": "result", "result": {"Text": "前半句"}}
+            )
+            await asyncio.sleep(1.1)
+            socket.incoming.put_nowait(
+                {"event": "result", "result": {"Text": "前半句和最后一句"}}
+            )
+            socket.incoming.put_nowait({"event": "finish"})
+
+        producer = asyncio.create_task(results())
+        try:
+            result = await recognize(PARAMS, queue, connect=lambda *a, **k: socket)
+            self.assertEqual(result, "前半句和最后一句")
+        finally:
+            await producer
+
     async def test_release_before_connection_preserves_all_audio(self):
         socket = Socket()
         queue = asyncio.Queue()

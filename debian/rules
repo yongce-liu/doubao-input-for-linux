@@ -4,22 +4,23 @@
 	dh $@
 
 override_dh_auto_build:
-	# Python source package; no hidden network downloads during build.
+	test -x dist/doubao-input
 
 override_dh_auto_install:
-	install -d debian/doubao-input/usr/lib/python3/dist-packages
-	cp -r src/doubao_input debian/doubao-input/usr/lib/python3/dist-packages/
-	find debian/doubao-input/usr/lib/python3 -type d -name __pycache__ -exec rm -rf {} +
-	find debian/doubao-input/usr/lib/python3 -name '*.pyc' -delete
-	install -D -m 0755 packaging/doubao-input.sh debian/doubao-input/usr/bin/doubao-input
+	install -D -m 0755 dist/doubao-input debian/doubao-input/usr/bin/doubao-input
 	install -D -m 0644 packaging/99-doubao-input-uinput.rules debian/doubao-input/usr/lib/udev/rules.d/99-doubao-input-uinput.rules
 	install -D -m 0644 packaging/doubao-input.conf debian/doubao-input/usr/lib/modules-load.d/doubao-input.conf
 	install -D -m 0644 src/doubao_input/resources/logo-128.png debian/doubao-input/usr/share/icons/hicolor/128x128/apps/doubao-input.png
 	install -d debian/doubao-input/usr/share/doc/doubao-input
-	install -m 0644 README.md LICENSE NOTICE docs/lightweight.md packaging/requirements.txt debian/doubao-input/usr/share/doc/doubao-input/
+	install -m 0644 README.md LICENSE NOTICE debian/doubao-input/usr/share/doc/doubao-input/
 
-override_dh_compress:
-	dh_compress -Xrequirements.txt
+override_dh_installsystemduser:
+	dh_installsystemduser --no-enable
+
+# PyInstaller 可执行文件含嵌入归档，不能再 strip / dwz。
+override_dh_strip:
+
+override_dh_dwz:
 
 override_dh_missing:
 	dh_missing --fail-missing

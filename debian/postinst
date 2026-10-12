@@ -17,18 +17,16 @@ case "${1:-}" in
         fi
         cat <<'HELP'
 豆包轻量版已安装；不会自动弹窗或启动录音。
-请以普通用户在桌面终端使用 uv 初始化环境：
-  uv venv --python /usr/bin/python3 --system-site-packages ~/.local/share/doubao-input/.venv
-  uv pip install --python ~/.local/share/doubao-input/.venv/bin/python -r /usr/share/doc/doubao-input/requirements.txt
+Python 和程序依赖已包含，无需安装 uv/pip 或创建虚拟环境。
+网页登录需要已安装原生 Chrome/Chromium。
 如果安装时无法确定普通用户，请手动 sudo usermod -aG input <用户名>。
 注销并重新登录后：
-  doubao-input login
-  doubao-input doctor
-  doubao-input serve
+  /usr/bin/doubao-input login
 需要自启时，在桌面终端运行：
-  systemctl --user import-environment DISPLAY XAUTHORITY WAYLAND_DISPLAY
   systemctl --user daemon-reload
   systemctl --user enable --now doubao-input.service
+如之前手动安装过，请检查 ~/.config/systemd/user/doubao-input.service
+是否仍指向旧二进制；deb 提供的服务使用 /usr/bin/doubao-input。
 HELP
         ;;
 esac

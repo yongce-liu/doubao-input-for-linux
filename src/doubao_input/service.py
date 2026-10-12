@@ -9,13 +9,17 @@ import signal
 import sys
 import time
 
+from doubao_input import session_env
 from doubao_input.doubao.audio_capture import AudioCapture
-from doubao_input.doubao.config import PASTE_DELAY, get_audio_config_path
+from doubao_input.doubao.config import (
+    PASTE_DELAY,
+    RELEASE_TAIL_SECONDS,
+    get_audio_config_path,
+)
 from doubao_input.doubao.params_store import ParamsStore
 from doubao_input.feedback import FeedbackClient
 from doubao_input.inject.injector import Injector
 from doubao_input.runtime import InstanceLock, write_status
-from doubao_input import session_env
 from doubao_input.streaming import AuthenticationError, recognize
 from doubao_input.trigger.evdev_ptt import (
     HOTKEYS,
@@ -50,6 +54,7 @@ class VoiceService:
         self.token = None
         self.pressed_at = None
         self.limit_timer = None
+        self.release_timer = None
         self.loop = None
         self.stop_event = None
         self.state = "idle"
@@ -107,6 +112,7 @@ class VoiceService:
             self.abort("音频缓冲已满，已取消本次录音；请检查网络")
 
     def abort(self, message):
+        self._cancel_timers()
         self.capture.stop()
         self.token = None
         self.set_state("error", message)
@@ -179,9 +185,9 @@ class VoiceService:
             logger.info("登录窗口已在打开中")
             return
         command = (
-            [sys.executable, "login"]
+            [sys.executable, "login", "--force"]
             if getattr(sys, "frozen", False)
-            else [sys.executable, "-m", "doubao_input", "login"]
+            else [sys.executable, "-m", "doubao_input", "login", "--force"]
         )
         self.login_task = asyncio.create_task(self._login_and_refresh(command))
 
@@ -249,17 +255,32 @@ class VoiceService:
             return
         duration = time.monotonic() - self.pressed_at
         self.pressed_at = None
-        self.capture.stop()
-        if self.limit_timer:
-            self.limit_timer.cancel()
-            self.limit_timer = None
         if duration < MIN_PRESS_DURATION:
+            self._cancel_timers()
+            self.capture.stop()
             self.token = None
             self.task.cancel()
             return
         self.set_state("finishing")
+        # 保留松手时尚未回调的音频和短暂尾音；重复松开不会延长录音。
+        self.release_timer = self.loop.call_later(
+            RELEASE_TAIL_SECONDS, self._finish_capture, self.token
+        )
+
+    def _finish_capture(self, token):
+        if token is not self.token or self._closing:
+            return
+        self._cancel_timers()
+        self.capture.stop()
         # stop() 已停止音频线程；已排入主循环的音频先于 sentinel 处理。
-        self.loop.call_soon(self.enqueue, self.token, None)
+        self.loop.call_soon(self.enqueue, token, None)
+
+    def _cancel_timers(self):
+        for name in ("limit_timer", "release_timer"):
+            timer = getattr(self, name)
+            if timer is not None:
+                timer.cancel()
+                setattr(self, name, None)
 
     async def transcribe(self, params, token, queue):
         try:
@@ -277,9 +298,7 @@ class VoiceService:
                 self.set_state("pasting")
                 await asyncio.sleep(PASTE_DELAY)
                 paste = asyncio.create_task(
-                    asyncio.to_thread(
-                        self.injector.inject, text, self.paste_shortcut
-                    )
+                    asyncio.to_thread(self.injector.inject, text, self.paste_shortcut)
                 )
                 try:
                     ok = await asyncio.shield(paste)
@@ -308,9 +327,7 @@ class VoiceService:
     def session_done(self, task):
         # 即使在协程首次执行前取消，仍要清理状态，允许下一次按键。
         self.capture.stop()
-        if self.limit_timer:
-            self.limit_timer.cancel()
-            self.limit_timer = None
+        self._cancel_timers()
         self.token = None
         self.queue = None
         self.pressed_at = None
@@ -334,6 +351,7 @@ class VoiceService:
             await self.stop_event.wait()
         finally:
             self._closing = True
+            self._cancel_timers()
             self._unregister_feedback_reader()
             if self.display_task is not None:
                 self.display_task.cancel()

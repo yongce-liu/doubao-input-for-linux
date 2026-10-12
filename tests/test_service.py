@@ -13,6 +13,7 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
         self.addCleanup(self.stack.close)
         self.stack.enter_context(patch.object(service, "AudioCapture"))
         self.stack.enter_context(patch.object(service, "Injector"))
+        self.stack.enter_context(patch.object(service, "RELEASE_TAIL_SECONDS", 0.01))
         self.status = self.stack.enter_context(patch.object(service, "write_status"))
         self.params = self.stack.enter_context(patch.object(service, "ParamsStore"))
         self.stack.enter_context(
@@ -96,6 +97,73 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
         self.engine.release()
         await self.finish()
         self.assertEqual(chunks, [b"last frame"])
+
+    async def test_release_keeps_tail_and_drains_stop_callback_before_sentinel(self):
+        chunks = self.mock_recognition()
+        self.engine.press()
+        callback = self.engine.capture.start.call_args.args[0]
+        callback(b"before release")
+        self.engine.pressed_at -= 1
+        with patch.object(service, "RELEASE_TAIL_SECONDS", 0.04):
+            self.engine.release()
+        timer = self.engine.release_timer
+        self.engine.release()
+        self.assertIs(self.engine.release_timer, timer)
+        self.engine.capture.stop.assert_not_called()
+        self.engine.injector.inject.assert_not_called()
+        await asyncio.sleep(0.01)
+        callback(b"tail after release")
+
+        def stopped():
+            self.engine.capture.stop.side_effect = None
+            callback(b"last queued callback")
+
+        self.engine.capture.stop.side_effect = stopped
+        await self.finish()
+        self.assertEqual(
+            chunks, [b"before release", b"tail after release", b"last queued callback"]
+        )
+        self.engine.injector.inject.assert_called_once()
+        self.assertIsNone(self.engine.release_timer)
+
+    async def test_cancel_during_tail_does_not_stop_next_session(self):
+        self.mock_recognition()
+        self.engine.press()
+        old_token = self.engine.token
+        self.engine.pressed_at -= 1
+        self.engine.release()
+        timer = self.engine.release_timer
+        self.engine.abort("cancel during tail")
+        await self.finish()
+        self.assertTrue(timer.cancelled())
+        self.engine.injector.inject.assert_not_called()
+        self.engine.press()
+        self.engine.capture.stop.reset_mock()
+        self.engine._finish_capture(old_token)
+        self.engine.capture.stop.assert_not_called()
+        self.assertTrue(self.engine.queue.empty())
+
+    async def test_shutdown_cancels_pending_tail(self):
+        self.mock_recognition()
+        self.engine.press()
+        self.engine.pressed_at -= 1
+        self.engine.release()
+        timer = self.engine.release_timer
+        self.engine._closing = True
+        self.engine._cancel_timers()
+        self.engine.task.cancel()
+        await self.finish()
+        self.assertTrue(timer.cancelled())
+        self.engine.injector.inject.assert_not_called()
+
+    async def test_short_press_stops_immediately_without_tail(self):
+        self.mock_recognition()
+        self.engine.press()
+        self.engine.release()
+        self.engine.capture.stop.assert_called_once()
+        self.assertIsNone(self.engine.release_timer)
+        await self.finish()
+        self.engine.injector.inject.assert_not_called()
 
     async def test_stale_audio_cannot_enter_next_session(self):
         self.mock_recognition()

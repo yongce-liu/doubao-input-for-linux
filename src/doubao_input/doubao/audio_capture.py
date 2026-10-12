@@ -13,7 +13,6 @@ Key differences from macOS:
 from __future__ import annotations
 
 import logging
-import threading
 from typing import Any
 
 from doubao_input.doubao.config import (
@@ -32,7 +31,6 @@ class AudioCapture:
         self._stream: Any | None = None
         self._on_audio_data = None  # callback: (bytes) -> None
         self._on_rms = None  # callback: (float in [0,1]) -> None
-        self._lock = threading.Lock()
         self.device = device
 
     @property
@@ -144,12 +142,6 @@ class AudioCapture:
                 item["index"] = index
                 result.append(item)
         return result
-
-    @staticmethod
-    def get_default_input_device():
-        """Get the default input device index."""
-        sd = _load_sounddevice()
-        return sd.default.device[0]
 
 
 def _load_sounddevice():

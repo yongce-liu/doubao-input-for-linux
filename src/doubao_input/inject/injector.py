@@ -73,11 +73,6 @@ class Injector:
             time.sleep(PASTE_DELAY)
             return self._simulate_paste(resolved)
 
-    def inject_via_uinput_only(self, shortcut: str = "auto") -> bool:
-        """Just synthesize the paste shortcut (caller already filled clipboard)."""
-        with self._lock:
-            return self._simulate_paste(self.resolve_shortcut(shortcut))
-
     def resolve_shortcut(self, shortcut: str = "auto") -> str:
         """把 auto 解析成具体快捷键；非 auto 的原样返回。"""
         if shortcut not in PASTE_SHORTCUTS:

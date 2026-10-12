@@ -60,7 +60,7 @@ class FeedbackClient:
             command = (
                 [sys.executable, "_indicator"]
                 if getattr(sys, "frozen", False)
-                else [sys.executable, "-m", "doubao_input.indicator"]
+                else [sys.executable, "-m", "doubao_input", "_indicator"]
             ) + ["--style", self.style]
             self.process = subprocess.Popen(
                 command,

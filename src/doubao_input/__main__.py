@@ -1,4 +1,4 @@
-"""轻量 CLI：核心与麦克风浮标分进程，登录和控制窗口按需打开。"""
+"""轻量 CLI：语音核心、D-Bus 托盘、浏览器登录分进程。"""
 
 from __future__ import annotations
 
@@ -32,10 +32,11 @@ def parser():
         "--indicator-style",
         choices=["dock", "float"],
         default="dock",
-        help="dock=托盘常驻图标（默认）；float=右下角浮标",
+        help="dock=托盘常驻图标（默认）；float=系统通知",
     )
     commands.add_parser("indicator-demo", help="预览麦克风浮标，不录音、不连接豆包")
-    commands.add_parser("login", help="打开登录窗口，登录后退出")
+    login = commands.add_parser("login", help="使用系统浏览器登录，登录后退出")
+    login.add_argument("--force", action="store_true", help="重新登录并替换已保存凭证")
     commands.add_parser("status", help="查看后台运行状态")
     commands.add_parser("devices", help="列出输入设备")
     device = commands.add_parser("set-device", help="保存麦克风选择，下次录音生效")
@@ -197,17 +198,17 @@ def main(argv=None) -> int:
                 indicator_style=getattr(args, "indicator_style", "dock"),
             )
         if command == "_indicator":
-            from doubao_input.indicator import main as run_indicator
+            from doubao_input.dbus_indicator import main as run_indicator
 
             return run_indicator(style=args.style)
         if command == "indicator-demo":
-            from doubao_input.indicator import main as run_indicator
+            from doubao_input.dbus_indicator import main as run_indicator
 
             return run_indicator(demo=True)
         if command == "login":
             from doubao_input.login_app import run_login
 
-            return run_login()
+            return run_login(force=args.force)
         if command == "status":
             from doubao_input.runtime import read_status
 

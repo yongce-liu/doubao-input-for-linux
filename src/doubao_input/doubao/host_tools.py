@@ -30,7 +30,3 @@ def command_candidates(tool: str) -> list[list[str]]:
     if is_flatpak() and shutil.which("flatpak-spawn"):
         commands.append(["flatpak-spawn", "--host", tool])
     return commands
-
-
-def has_tool(tool: str) -> bool:
-    return bool(command_candidates(tool))

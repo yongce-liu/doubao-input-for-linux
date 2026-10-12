@@ -70,7 +70,3 @@ class ParamsStore:
             logger.info("Cleared saved params")
         except Exception as e:
             logger.error("Failed to clear params: %s", e)
-
-    @staticmethod
-    def has_saved() -> bool:
-        return get_params_path().exists()

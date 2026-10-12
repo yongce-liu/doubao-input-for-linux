@@ -1,0 +1,22 @@
+FROM ubuntu:22.04 AS build
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates curl build-essential libportaudio2 && rm -rf /var/lib/apt/lists/*
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh
+ENV PATH="/root/.local/bin:${PATH}"
+WORKDIR /build
+COPY pyproject.toml uv.lock README.md LICENSE NOTICE ./
+COPY src ./src
+COPY packaging ./packaging
+RUN sh packaging/build-binary.sh
+
+FROM build AS deb-build
+RUN apt-get update && apt-get install -y --no-install-recommends debhelper \
+    && rm -rf /var/lib/apt/lists/*
+COPY debian ./debian
+RUN dpkg-buildpackage -us -uc -b && mkdir /out && cp /doubao-input_*.deb /out/
+
+FROM scratch AS deb-artifact
+COPY --from=deb-build /out/ /
+
+FROM scratch AS artifact
+COPY --from=build /build/dist/doubao-input /doubao-input

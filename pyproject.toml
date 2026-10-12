@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "doubao-input"
-version = "1.1.0.dev0"
+version = "1.2.0"
 description = "Headless user-session voice input for Linux, backed by Doubao ASR"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -20,7 +20,8 @@ classifiers = [
     "Topic :: Utilities",
 ]
 dependencies = [
-    "websockets>=12",
+    "websockets>=13",
+    "dbus-next>=0.2.3",
     "sounddevice>=0.4.6",
     "evdev>=1.4",
 ]

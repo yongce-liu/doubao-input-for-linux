@@ -1,0 +1,9 @@
+.git
+.venv*
+build
+dist
+**/__pycache__
+**/*.pyc
+*.deb
+*.spec
+doubao-input

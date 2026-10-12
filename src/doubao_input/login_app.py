@@ -1,118 +1,207 @@
-"""按需登录进程：登录成功退出，后台服务不加载 GTK/WebKit。
-
-已保存凭证时先询问：继续使用现有登录，或退出登录后重新扫码；
-未保存凭证时直接打开豆包网页登录窗口。
-"""
+"""通过独立 Chromium 会话登录，不加载系统 Python GUI 扩展。"""
 
 from __future__ import annotations
 
+import asyncio
+import json
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+from contextlib import suppress
+from pathlib import Path
 
-def run_login() -> int:
-    import gi
+from doubao_input.doubao.config import LOGIN_URL
+from doubao_input.doubao.params_store import ASRParams, ParamsStore
 
-    gi.require_version("Gtk", "4.0")
-    from gi.repository import GLib, Gtk
 
-    from doubao_input.doubao.app_state import AppState
-    from doubao_input.doubao.login_window import LoginWindow
-    from doubao_input.doubao.params_store import ParamsStore
+def find_browser():
+    override = os.environ.get("DOUBAO_BROWSER")
+    for name in (
+        [override]
+        if override
+        else [
+            "google-chrome",
+            "google-chrome-stable",
+            "chromium",
+            "chromium-browser",
+            "microsoft-edge",
+            "brave-browser",
+        ]
+    ):
+        executable = shutil.which(name)
+        if executable:
+            return executable
+    raise RuntimeError(
+        "请安装 Chrome/Chromium，或设置 DOUBAO_BROWSER 为浏览器可执行文件路径"
+    )
 
-    if not LoginWindow.is_available():
-        raise RuntimeError("请安装 python3-gi、gir1.2-gtk-4.0 和 gir1.2-webkit-6.0")
-    if not Gtk.init_check():
-        raise RuntimeError("无法连接桌面会话；请在桌面终端运行 login，勿使用 sudo")
 
-    loop = GLib.MainLoop()
-    result = 1  # 用户关闭窗口未登录视为失败
-    holder = {"window": None, "timer": None, "pending": False}
+class CDP:
+    def __init__(self, socket):
+        self.socket = socket
+        self.serial = 0
 
-    def finish(code):
-        nonlocal result
-        result = code
-        loop.quit()
-
-    def start_webview_login(window=None):
-        """打开豆包网页登录；检测到已登录态后提取凭证并退出。"""
-        if window is None:
-            window = LoginWindow(AppState())
-        holder["window"] = window
-
-        def extracted(params):
-            holder["pending"] = False
-            if params:
-                ParamsStore.save(params)
-                if ParamsStore.load() == params:
-                    print("登录凭证已保存。后台服务在下一次按键时自动读取。")
-                    finish(0)
-
-        def extract():
-            holder["timer"] = None
-            window.extract_params_async(extracted)
-            return False
-
-        def on_login(status, nickname):
-            if status == "loggedIn" and not holder["pending"]:
-                holder["pending"] = True
-                holder["timer"] = GLib.timeout_add(800, extract)
-
-        window.on_close = loop.quit
-        window._on_login_status_change = on_login
-        window.load()
-        window.show()
-
-    def show_status_window():
-        """本地已有登录凭证：询问继续使用还是退出登录。"""
-        dialog = Gtk.Window(title="豆包语音输入 - 登录状态")
-        dialog.set_default_size(420, 180)
-        dialog.set_resizable(False)
-        holder["window"] = dialog
-
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=18)
-        for side in ("top", "bottom", "start", "end"):
-            getattr(box, f"set_margin_{side}")(24)
-        label = Gtk.Label(
-            label="检测到已保存的豆包登录信息。\n"
-            "可直接关闭本窗口继续使用，或退出登录后重新登录。"
+    async def call(self, method, params=None):
+        self.serial += 1
+        await self.socket.send(
+            json.dumps(
+                {
+                    "id": self.serial,
+                    "method": method,
+                    "params": params or {},
+                }
+            )
         )
-        label.set_wrap(True)
-        box.append(label)
+        async with asyncio.timeout(15):
+            async for raw in self.socket:
+                reply = json.loads(raw)
+                if reply.get("id") == self.serial:
+                    if "error" in reply:
+                        raise RuntimeError("浏览器调试命令失败：" + method)
+                    return reply.get("result", {})
+        raise RuntimeError("登录浏览器已断开")
 
-        buttons = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
-        buttons.set_halign(Gtk.Align.CENTER)
-        keep = Gtk.Button(label="保持登录并关闭")
-        logout = Gtk.Button(label="退出登录")
-        logout.add_css_class("destructive-action")
 
-        keep.connect("clicked", lambda *_: finish(0))
-
-        def on_logout(*_args):
-            ParamsStore.clear()
-            dialog.set_visible(False)
-            # 清空网页侧会话数据后再进入重新登录，避免旧会话自动登录。
-            window = LoginWindow(AppState())
-            window._setup()
-            window._clear_website_data(lambda: start_webview_login(window))
-
-        logout.connect("clicked", on_logout)
-        buttons.append(keep)
-        buttons.append(logout)
-        box.append(buttons)
-        dialog.set_child(box)
-        dialog.connect("close-request", lambda *_: (finish(0), True)[1])
-        dialog.present()
-
-    if ParamsStore.has_saved():
-        show_status_window()
-    else:
-        start_webview_login()
+def extract_params(value, cookies):
+    if not isinstance(value, dict) or not value.get("loggedIn"):
+        return None
     try:
-        loop.run()
+        device = json.loads(value.get("device") or "{}").get("web_id")
+        web = json.loads(value.get("web") or "{}").get("web_id")
+    except (ValueError, AttributeError, TypeError):
+        return None
+    jar = {
+        c["name"]: c["value"]
+        for c in cookies
+        if c.get("domain", "").lstrip(".") == "doubao.com"
+        or c.get("domain", "").endswith(".doubao.com")
+    }
+    if jar and isinstance(device, str) and device and isinstance(web, str) and web:
+        return ASRParams(jar, device, web)
+    return None
+
+
+async def browser_login(browser, profile):
+    from websockets.asyncio.client import connect
+    from websockets.exceptions import ConnectionClosed
+
+    env = os.environ.copy()
+    if getattr(sys, "frozen", False):
+        # PyInstaller 的库搜索路径只适用于自身，不能传给系统浏览器。
+        original = env.pop("LD_LIBRARY_PATH_ORIG", None)
+        if original is None:
+            env.pop("LD_LIBRARY_PATH", None)
+        else:
+            env["LD_LIBRARY_PATH"] = original
+    process = subprocess.Popen(  # noqa: ASYNC220 -- 仅启动，所有 wait 在线程中执行
+        [
+            browser,
+            f"--user-data-dir={profile}",
+            "--remote-debugging-port=0",
+            "--remote-debugging-address=127.0.0.1",
+            "--no-first-run",
+            "--no-default-browser-check",
+            "about:blank",
+        ],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        env=env,
+    )
+    port = endpoint = None
+    try:
+        active = Path(profile) / "DevToolsActivePort"
+        for _ in range(300):
+            if process.poll() is not None:
+                raise RuntimeError(
+                    "浏览器启动失败；请在桌面终端运行，并检查 DOUBAO_BROWSER"
+                )
+            try:
+                port, endpoint = active.read_text().splitlines()[:2]
+                if port.isdigit() and endpoint.startswith("/devtools/browser/"):
+                    break
+            except (OSError, ValueError):
+                pass
+            await asyncio.sleep(0.1)
+        else:
+            raise RuntimeError(
+                "等待浏览器超时；Snap 浏览器可能无法访问独立配置目录，请使用原生 Chrome"
+            )
+        async with connect(
+            f"ws://127.0.0.1:{port}{endpoint}", max_size=4 * 1024 * 1024
+        ) as socket:
+            browser_cdp = CDP(socket)
+            targets = (await browser_cdp.call("Target.getTargets"))["targetInfos"]
+            target = next(t["targetId"] for t in targets if t["type"] == "page")
+            async with connect(
+                f"ws://127.0.0.1:{port}/devtools/page/{target}",
+                max_size=4 * 1024 * 1024,
+            ) as page_socket:
+                page = CDP(page_socket)
+                await page.call("Page.enable")
+                script = (
+                    Path(__file__).parent / "login/resources/inject-websocket.js"
+                ).read_text()
+                bridge = "window.webkit={messageHandlers:{asrHandler:{postMessage:m=>{window.__doubaoLoggedIn=m.status==='loggedIn';}}}};"
+                await page.call(
+                    "Page.addScriptToEvaluateOnNewDocument", {"source": bridge + script}
+                )
+                await page.call("Page.navigate", {"url": LOGIN_URL})
+                print(
+                    "请在打开的独立浏览器窗口登录豆包；登录成功后自动关闭。", flush=True
+                )
+                async with asyncio.timeout(600):
+                    while process.poll() is None:
+                        reply = await page.call(
+                            "Runtime.evaluate",
+                            {
+                                "expression": "location.hostname === 'www.doubao.com' || location.hostname === 'doubao.com' ? ({loggedIn:window.__doubaoLoggedIn===true,device:localStorage.getItem('samantha_web_web_id'),web:localStorage.getItem('__tea_cache_tokens_497858')}) : null",
+                                "returnByValue": True,
+                            },
+                        )
+                        cookies = await page.call(
+                            "Network.getCookies", {"urls": [LOGIN_URL]}
+                        )
+                        params = extract_params(
+                            reply.get("result", {}).get("value"),
+                            cookies.get("cookies", []),
+                        )
+                        if params:
+                            ParamsStore.save(params)
+                            if ParamsStore.load() != params:
+                                raise RuntimeError("登录凭证保存失败")
+                            print("登录凭证已保存。后台服务在下一次按键时自动读取。")
+                            return 0
+                        await asyncio.sleep(1)
+        return 1
     finally:
-        if holder["timer"] is not None:
-            GLib.source_remove(holder["timer"])
-        window = holder["window"]
-        if isinstance(window, LoginWindow):
-            window.destroy()
-        elif window is not None:
-            window.destroy()
-    return result
+        if port and endpoint and process.poll() is None:
+            # 浏览器关闭连接后可能来不及返回命令结果。
+            with suppress(ConnectionClosed, OSError, TimeoutError, RuntimeError):
+                async with asyncio.timeout(3):
+                    async with connect(f"ws://127.0.0.1:{port}{endpoint}") as socket:
+                        await CDP(socket).call("Browser.close")
+        if process.poll() is None:
+            try:
+                await asyncio.to_thread(process.wait, timeout=5)
+            except subprocess.TimeoutExpired:
+                process.terminate()
+                try:
+                    await asyncio.to_thread(process.wait, timeout=3)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    await asyncio.to_thread(process.wait)
+
+
+def run_login(*, force=False):
+    if ParamsStore.load() and not force:
+        print("已保存登录凭证；如需重新登录，请运行 doubao-input login --force")
+        return 0
+    browser = find_browser()
+    # 使用独立目录，不接触用户已有浏览器的历史、Cookie 或配置。
+    with tempfile.TemporaryDirectory(prefix="doubao-login-") as profile:
+        try:
+            return asyncio.run(browser_login(browser, profile))
+        except TimeoutError:
+            raise RuntimeError("登录超时，请重新运行 doubao-input login") from None

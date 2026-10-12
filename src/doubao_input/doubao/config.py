@@ -32,7 +32,6 @@ LOGIN_URL = "https://www.doubao.com/chat"
 
 AUDIO_SAMPLE_RATE = 16000
 AUDIO_CHANNELS = 1
-AUDIO_DTYPE = "int16"
 AUDIO_BLOCKSIZE = 4096  # samples per callback (~256ms at 16kHz)
 
 # --- Auth error detection ---
@@ -51,7 +50,6 @@ AUTH_ERROR_KEYWORDS = [
 
 CONFIG_DIR_NAME = "doubao-input"
 PARAMS_FILE = "asr_params.json"
-KEYBOARD_FILE = "keyboard.json"
 AUDIO_FILE = "audio.json"
 TRIGGER_FILE = "trigger.json"
 
@@ -69,11 +67,6 @@ def get_params_path() -> Path:
     return get_config_dir() / PARAMS_FILE
 
 
-def get_keyboard_config_path() -> Path:
-    """Get the path to the on-screen keyboard geometry JSON file."""
-    return get_config_dir() / KEYBOARD_FILE
-
-
 def get_audio_config_path() -> Path:
     return get_config_dir() / AUDIO_FILE
 
@@ -84,32 +77,6 @@ def get_trigger_config_path() -> Path:
 
 # --- Timeouts ---
 
-STOP_SAFETY_TIMEOUT = 1.0  # seconds
-DEBOUNCE_INTERVAL = 0.3  # seconds
-PASTE_DELAY = 0.05  # seconds between copy and paste simulation
-AUTH_EXPIRY_DELAY = 2.0  # seconds before resetting after auth error
-
-# --- Paste shortcut ---
-# 默认 auto：注入前读取焦点窗口的 WM_CLASS，是终端就用终端自己的粘贴
-# 快捷键（多数 Ctrl+Shift+V，xterm 系 Shift+Insert），否则用 Ctrl+V。
-# 终端里 Ctrl+V 会被 readline 当成 quoted-insert（^V），文字进不去。
-# 可用 `serve --paste-shortcut ctrl-v|ctrl-shift-v|shift-insert` 覆盖。
-DEFAULT_PASTE_SHORTCUT = "auto"
-
-# --- Overlay UI ---
-
-OVERLAY_WIDTH = 760
-OVERLAY_HEIGHT = 88
-# Transcription text wraps within this many "characters" (Pango's average
-# char-width unit ~= the old 760px text column) and the overlay grows in
-# height up to OVERLAY_MAX_LINES before the oldest words scroll off.
-OVERLAY_TEXT_CHARS = 88
-OVERLAY_MAX_LINES = 5
-PTT_BUTTON_SIZE = 60
-
-# --- User-Agent for WebView ---
-
-WEBVIEW_USER_AGENT = (
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
-    "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
-)
+RELEASE_TAIL_SECONDS = 0.4  # 松开后继续采集；大于一块音频，保留句末尾音。
+STOP_SAFETY_TIMEOUT = 2.0  # 停止发送后等待服务端最终结果的上限。
+PASTE_DELAY = 0.05  # 等待物理 Ctrl 释放，避免和虚拟粘贴快捷键叠加。

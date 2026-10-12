@@ -5,59 +5,16 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
+from doubao_input.dbus_indicator import COLORS, LABELS, visual_state
 from doubao_input.feedback import FeedbackClient
-from doubao_input.indicator import IndicatorController, bottom_right, visual_state
 
 
 class IndicatorTests(unittest.TestCase):
-    def setUp(self):
-        self.backend = Mock()
-        # 浮标/通知语义：待机隐藏，错误自动消失
-        self.backend.shows_idle = False
-        self.backend.auto_hide_error = True
-        self.scheduler = Mock()
-        self.scheduler.timeout_add.return_value = 42
-        self.controller = IndicatorController(self.backend, self.scheduler)
-
     def test_connecting_is_real_recording_and_does_not_flicker_on_open(self):
-        self.controller.update("connecting")
-        self.controller.update("recording")
-        self.backend.show.assert_called_once_with("recording")
-
-    def test_release_processing_and_idle_hides(self):
-        self.controller.update("recording")
-        self.controller.update("finishing")
-        self.controller.update("pasting")
-        self.controller.update("idle")
-        self.assertEqual(self.backend.show.call_count, 2)
-        self.backend.show.assert_called_with("processing")
-        self.backend.hide.assert_called_once()
-
-    def test_failure_expires_and_can_be_shown_again(self):
-        self.controller.update("error")
-        self.assertEqual(self.controller.timer, 42)
-        self.controller.expire()
-        self.backend.hide.assert_called_once()
-        self.controller.update("error")
-        self.assertEqual(self.backend.show.call_count, 2)
-
-    def test_old_error_timer_cannot_hide_new_recording(self):
-        self.controller.update("error")
-        self.controller.update("recording")
-        self.scheduler.source_remove.assert_called_once_with(42)
-        self.assertIsNone(self.controller.timer)
-
-    def test_close_removes_timer_and_hides(self):
-        self.controller.update("login-required")
-        self.controller.close()
-        self.scheduler.source_remove.assert_called_once_with(42)
-        self.backend.hide.assert_called_once()
-
-    def test_position_respects_workarea_and_negative_monitor_origin(self):
-        area = SimpleNamespace(x=-1920, y=0, width=1920, height=1040)
-        self.assertEqual(bottom_right(area, 64, 64), (-88, 952))
-        area = SimpleNamespace(x=0, y=0, width=50, height=50)
-        self.assertEqual(bottom_right(area, 64, 64), (0, 0))
+        self.assertEqual(visual_state("connecting"), "recording")
+        self.assertEqual(visual_state("recording"), "recording")
+        self.assertEqual(visual_state("finishing"), "processing")
+        self.assertEqual(visual_state("pasting"), "processing")
 
     def test_unknown_states_cannot_display_recognized_text(self):
         self.assertIsNone(visual_state("这是用户说的话"))
@@ -66,31 +23,43 @@ class IndicatorTests(unittest.TestCase):
         self.assertEqual(visual_state("idle"), "idle")
         self.assertIsNone(visual_state("stopped"))
 
-    def test_dock_backend_shows_idle_and_keeps_error(self):
-        self.backend.shows_idle = True
-        self.backend.auto_hide_error = False
-        self.controller.update("idle")
-        self.backend.show.assert_called_once_with("idle")
-        self.controller.update("error")
-        self.assertIsNone(self.controller.timer)  # Dock 上错误红图标保持可见
-        self.controller.update("idle")
-        self.assertEqual(self.backend.show.call_count, 3)
-
     def test_dock_idle_colors_are_available(self):
-        from doubao_input.indicator_art import STATE_COLORS, STATE_LABELS
-
         for state in ("idle", "recording", "processing", "error", "login-required"):
-            self.assertIn(state, STATE_COLORS)
-            self.assertIn(state, STATE_LABELS)
+            self.assertIn(state, COLORS)
+            self.assertIn(state, LABELS)
         # 用户约定：绿=录音，黄=处理，红=错误，灰=待机
-        self.assertGreater(STATE_COLORS["recording"][1], 0.7)  # 绿通道
-        self.assertLess(STATE_COLORS["recording"][0], 0.3)
-        self.assertGreater(STATE_COLORS["error"][0], 0.9)  # 红通道
-        self.assertGreater(STATE_COLORS["processing"][0], 0.9)  # 黄=红+绿
-        self.assertGreater(STATE_COLORS["processing"][1], 0.6)
+        self.assertGreater(COLORS["recording"][1], COLORS["recording"][0])
+        self.assertGreater(COLORS["error"][0], COLORS["error"][1])
+        self.assertGreater(COLORS["processing"][0], COLORS["processing"][2])
+        self.assertGreater(COLORS["processing"][1], COLORS["processing"][2])
 
 
 class FeedbackClientTests(unittest.TestCase):
+    def test_source_indicator_uses_shared_cli_entry(self):
+        import sys
+
+        child = Mock()
+        child.stdin.fileno.return_value = 10
+        child.stdout.fileno.return_value = 11
+        with (
+            patch.dict(os.environ, DISPLAY=":1"),
+            patch.object(sys, "frozen", False, create=True),
+            patch("subprocess.Popen", return_value=child) as popen,
+            patch("os.set_blocking"),
+        ):
+            FeedbackClient().start()
+        self.assertEqual(
+            popen.call_args.args[0],
+            [
+                sys.executable,
+                "-m",
+                "doubao_input",
+                "_indicator",
+                "--style",
+                "dock",
+            ],
+        )
+
     def test_disabled_client_does_not_start_process(self):
         with patch("subprocess.Popen") as popen:
             FeedbackClient(enabled=False).start()
@@ -136,14 +105,13 @@ class FeedbackClientTests(unittest.TestCase):
         self.assertIsNone(client.process)
 
     def test_badge_renders_offscreen(self):
-        import cairo
-
-        from doubao_input.indicator_art import draw_badge
+        from doubao_input.dbus_indicator import icon_pixels
 
         for state in ("idle", "recording", "processing", "error", "login-required"):
-            surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, 64, 64)
-            draw_badge(cairo.Context(surface), state)
-            self.assertTrue(any(surface.get_data()))
+            pixels = icon_pixels(state)
+            self.assertEqual(len(pixels), 32 * 32 * 4)
+            self.assertEqual(pixels[:4], bytes(4))
+            self.assertTrue(any(pixels))
 
 
 class IndicatorProcessTests(unittest.TestCase):
@@ -151,15 +119,20 @@ class IndicatorProcessTests(unittest.TestCase):
         import sys
 
         code = """
-from unittest.mock import Mock, patch
-from doubao_input.indicator import main
+from unittest.mock import Mock, AsyncMock, patch
+from doubao_input.dbus_indicator import main
 backend = Mock()
-backend.shows_idle = False
-backend.auto_hide_error = True
-with patch('doubao_input.indicator.NotificationBadge', return_value=backend):
-    main()
-assert [call.args[0] for call in backend.show.call_args_list] == ['recording', 'processing']
-assert backend.hide.call_count >= 1
+backend.call_notify = AsyncMock(return_value=1)
+backend.call_close_notification = AsyncMock()
+bus = Mock()
+bus.introspect = AsyncMock(return_value=Mock())
+bus.get_proxy_object.return_value.get_interface.return_value = backend
+with patch('doubao_input.dbus_indicator.MessageBus') as factory, patch('doubao_input.dbus_indicator.Menu'):
+    factory.return_value.connect = AsyncMock(return_value=bus)
+    main(style='float')
+assert [call.args[3] for call in backend.call_notify.call_args_list] == ['正在录音', '正在识别']
+backend.call_close_notification.assert_awaited_once_with(1)
+bus.disconnect.assert_called_once()
 """
         env = dict(os.environ, WAYLAND_DISPLAY="test-only", XDG_SESSION_TYPE="wayland")
         result = subprocess.run(

@@ -4,13 +4,16 @@ from __future__ import annotations
 
 import asyncio
 import json
+import uuid
+from urllib.parse import urlencode
 
-from doubao_input.doubao.asr_client import ASRClient, _websocket_header_kwargs
 from doubao_input.doubao.config import (
     AUTH_ERROR_CODE,
     AUTH_ERROR_KEYWORDS,
+    FIXED_QUERY_PARAMS,
     ORIGIN,
     STOP_SAFETY_TIMEOUT,
+    WSS_BASE_URL,
 )
 
 
@@ -27,8 +30,15 @@ async def recognize(
     final_timeout=STOP_SAFETY_TIMEOUT,
 ) -> str:
     if connect is None:
-        from websockets import connect
-    url = ASRClient()._build_url(params)
+        from websockets.asyncio.client import connect
+    query = dict(
+        FIXED_QUERY_PARAMS,
+        device_id=params.device_id,
+        web_id=params.web_id,
+        tea_uuid=params.web_id,
+        web_tab_id=str(uuid.uuid4()),
+    )
+    url = f"{WSS_BASE_URL}?{urlencode(query)}"
     headers = {"Cookie": params.cookie_header, "Origin": ORIGIN}
     text = ""
     # 不记录带身份信息的 URL、cookie 或识别内容。
@@ -37,7 +47,7 @@ async def recognize(
         open_timeout=5,
         close_timeout=1,
         max_size=2**20,
-        **_websocket_header_kwargs(connect, headers),
+        additional_headers=headers,
     ) as ws:
         on_open()
 
